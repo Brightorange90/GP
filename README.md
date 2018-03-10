@@ -7,3 +7,8 @@ A library for gaussian process regression, I write this library for my Ph.D rese
 - ARD Gaussian Kernel
 - Constant mean function
 - MLE to estimate the hyperparameters
+
+## Dependencies
+
+- NLOPT
+- [MVMO](git@github.com:Alaya-in-Matrix/MVMO.git)
