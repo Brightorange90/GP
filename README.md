@@ -11,4 +11,4 @@ A library for gaussian process regression, I write this library for my Ph.D rese
 ## Dependencies
 
 - NLOPT
-- [MVMO](git@github.com:Alaya-in-Matrix/MVMO.git)
+- [MVMO](https://github.com/Alaya-in-Matrix/MVMO)
