@@ -468,7 +468,8 @@ VectorXd GP::select_init_hyp(size_t max_eval, size_t spec_idx, const Eigen::Vect
         VectorXd fake_g;
         if(_noise_free)
             transform_x(_dim + 1) = -1 * INF;
-        return _calcNegLogProb(transform_x, fake_g, false, spec_idx);
+        return transform_x(_dim) < transform_x(_dim + 1) ? INF 
+                                                         : _calcNegLogProb(transform_x, fake_g, false, spec_idx);
     };
     VectorXd lb            = convert(hyp2vec(_hyps_lb.col(spec_idx)));
     VectorXd ub            = convert(hyp2vec(_hyps_ub.col(spec_idx)));
@@ -545,13 +546,10 @@ double GP::_likelihood_gradient_checking(size_t spec_idx, const VectorXd& hyp, c
     }
     double rel_err = (grad - check_grad).norm() / grad.norm();
 #ifdef MYDEBUG
-    if(rel_err > 0.05 || !isfinite(rel_err))
-    {
-        MatrixXd check_matrix(3, _num_hyp);
-        check_matrix << hyp.transpose(), grad.transpose(), check_grad.transpose();
-        cout << "CheckGrad:\n" << check_matrix << endl;
-        cout << "Rel Difference: " << rel_err << endl;
-    }
+    MatrixXd check_matrix(3, _num_hyp);
+    check_matrix << hyp.transpose(), grad.transpose(), check_grad.transpose();
+    cout << "CheckGrad:\n" << check_matrix << endl;
+    cout << "Rel Difference: " << rel_err << endl;
 #endif
     return rel_err;
 }
