@@ -31,26 +31,13 @@ NumType get_required(const std::map<std::string, double>& mp, std::string key)
 
 template<typename VecType> double stdvar(const VecType& v)
 {
-    // v.sum() function gives different result for same vector in two program
-    // the error is about less than 1e-10 and doesn't affect the optimization result much
-    // however, that laeds to a failure of regression test, 
-    // so I use manually calculated mean
-    double vsum = 0;
-    for(int i = 0; i < v.size(); ++i)
-        vsum += v(i);
+    double vsum = v.sum();
     double mean = vsum / (v.size());
     return (v - mean * VecType::Ones(v.size())).squaredNorm() / (v.size()-1);
 }
 template<typename VecType> double stddev(const VecType& v)
 {
     return sqrt(stdvar<VecType>(v));
-}
-template<typename T>
-T fromMaybe(std::map<std::string, double> option, std::string name, T defV)
-{
-    static_assert(std::is_arithmetic<T>::value, "Number required in fromMaybe");
-    auto p = option.find(name);
-    return p == option.end() ? defV : static_cast<T>(p->second);
 }
 // VecType should works for: std::vecotr, Eigen::VectorXd, Eigen::RowVectorXd
 template <typename VecType>
@@ -98,4 +85,3 @@ void find_best(const Eigen::MatrixXd& xs, const Eigen::MatrixXd& ys, Eigen::Vect
 Eigen::MatrixXd rand_matrix(size_t num_col, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub,
                             std::mt19937_64& eig = engine);
 
-double cond(const Eigen::MatrixXd& m);

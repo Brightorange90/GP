@@ -238,9 +238,3 @@ Eigen::MatrixXd rand_matrix(size_t num_col, const Eigen::VectorXd& lb, const Eig
     m = _a.replicate(1, num_col).cwiseProduct(m).colwise() + _b;
     return m;
 }
-
-double cond(const MatrixXd& K)
-{
-    JacobiSVD<MatrixXd> svd(K);
-    return svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
-}
