@@ -27,8 +27,8 @@ class GP
     Eigen::VectorXd _hyps_ub;
 
     Eigen::MatrixXd _utilGradMatrix; // utility matrix to calculate gradient of likelihood with SEard kernel
-    std::vector<Eigen::ColPivHouseholderQR<Eigen::MatrixXd>> _K_solver;
-    Eigen::MatrixXd _invKys;
+    Eigen::ColPivHouseholderQR<Eigen::MatrixXd> _K_solver;
+    Eigen::VectorXd _invKys;
     bool _fixhyps    = false; // use fixed hyperparameters, do not train
     bool _noise_free = false;
     bool _trained;
@@ -42,14 +42,15 @@ class GP
 
     double _calcNegLogProb(const std::vector<double>&, std::vector<double>& g) const;
     double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd& g, bool calc_grad) const;
+    double _calcNegLogProb(const Eigen::VectorXd& hyp) const;
+    double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd&) const;
 
     void _predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept;
 
-    Eigen::VectorXd select_init_hyp(size_t num_lscale, const Eigen::VectorXd& def_hyp);
 
     void _set_hyp_range();
-    void _check_hyp_range(size_t, const Eigen::VectorXd&) const noexcept;
-    double _likelihood_gradient_checking(size_t, const Eigen::VectorXd& hyp, const Eigen::VectorXd& grad);
+    void _check_hyp_range(const Eigen::VectorXd&) const noexcept;
+    double _likelihood_gradient_checking(const Eigen::VectorXd& hyp, const Eigen::VectorXd& grad);
     bool _check_SPD(const Eigen::MatrixXd& m) const;
 
     Eigen::VectorXd     vec2hyp(const std::vector<double>& vx) const;
@@ -64,7 +65,7 @@ public:
     size_t num_train() const noexcept;
     Eigen::VectorXd get_default_hyps() const noexcept;
     const Eigen::MatrixXd& train_in()  const noexcept;
-    const Eigen::MatrixXd& train_out() const noexcept;
+    const Eigen::VectorXd& train_out() const noexcept;
     bool trained() const noexcept;
     bool noise_free() const { return _noise_free; }
 
@@ -72,9 +73,9 @@ public:
     void set_fixed(bool);
     void set_noise_free(bool flag);
 
-    // training, return vector of negative log likelihood
-    Eigen::VectorXd train(const Eigen::VectorXd& init_hyps);
-    Eigen::VectorXd train(); // use default_hyp as init_hyps
+    // training, return negative log likelihood
+    double train(const Eigen::VectorXd& init_hyps);
+    double train(); // use default_hyp as init_hyps
 
     const Eigen::VectorXd& get_hyp() const noexcept;
 
@@ -97,6 +98,6 @@ public:
     // void predict_with_grad(size_t, const Eigen::VectorXd& x, double& y, double& s2, Eigen::VectorXd& grad_y, Eigen::VectorXd&  grad_s2) const noexcept;
     // void predict_with_grad(size_t, const Eigen::MatrixXd& x, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& grad_y, Eigen::MatrixXd&  grad_s2) const noexcept;
     
-    Eigen::MatrixXd select_init_hyp(size_t, const Eigen::MatrixXd&);
+    Eigen::VectorXd select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp);
     Eigen::VectorXd sample_GP_1D(double lb, double ub);
 };
