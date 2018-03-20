@@ -31,6 +31,8 @@ GP::GP(const MatrixXd& train_in, const MatrixXd& train_out)
     assert(_num_train == static_cast<size_t>(_train_out.rows()));
     _set_hyp_range();
 }
+
+
 // Append new training data
 void GP::add_data(const MatrixXd& x, const MatrixXd& y)
 {

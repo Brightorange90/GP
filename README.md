@@ -12,3 +12,7 @@ A library for gaussian process regression, I write this library for my Ph.D rese
 
 - NLOPT
 - [MVMO](https://github.com/Alaya-in-Matrix/MVMO)
+
+## TODO
+
+- VFE and FITC approximation
