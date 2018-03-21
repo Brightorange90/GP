@@ -486,11 +486,13 @@ void GP::_set_hyp_range()
         _hyps_ub(i) = lscale_ub; 
     }
 
-    // variance and mean
+    // variance
     _hyps_lb(_dim)     = log(max(_noise_lb, numeric_limits<double>::epsilon() * (_train_out.maxCoeff() - _train_out.minCoeff())));
     _hyps_ub(_dim)     = log(10 * (_train_out.maxCoeff() - _train_out.minCoeff()));
+    
+    //mean
     _hyps_lb(_dim + 2) = _train_out.minCoeff();
-    _hyps_ub(_dim + 2) = _train_out.minCoeff();
+    _hyps_ub(_dim + 2) = _train_out.maxCoeff();
 
     // noise
     _hyps_lb(_dim + 1) = log(_noise_lb);
