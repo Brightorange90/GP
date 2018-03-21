@@ -45,8 +45,11 @@ class GP
     double _calcNegLogProb(const Eigen::VectorXd& hyp) const;
     double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd&) const;
 
-    void _predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept;
-
+    // predicting y has complexity of O(N) while predicting s2 needs O(N^2) complexity
+    // somethimes we only need the y prediction
+    void _predict(const Eigen::MatrixXd& x,    bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept;
+    void _predict_y(const Eigen::MatrixXd& x,  bool need_g, Eigen::VectorXd& y,  Eigen::MatrixXd& gy)  const noexcept;
+    void _predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept;
 
     void _set_hyp_range();
     void _check_hyp_range(const Eigen::VectorXd&) const noexcept;
@@ -88,16 +91,14 @@ public:
     std::pair<double, Eigen::VectorXd> predict_s2_with_grad(const Eigen::VectorXd& xs) const;
 
     void predict(const Eigen::VectorXd& xs, double& y, double& s2) const;
-    void predict_with_grad(const Eigen::VectorXd& xs, double& y, double& s2, Eigen::VectorXd& gy, double& gs2);
+    void predict_with_grad(const Eigen::VectorXd& xs, double& y, double& s2, Eigen::VectorXd& gy, Eigen::VectorXd& gs2) const;
     std::tuple<double, double> predict(const Eigen::VectorXd& xs) const;
-    std::tuple<double, double, Eigen::VectorXd, Eigen::VectorXd> predict_with_grad(const Eigen::VectorXd& xs);
+    std::tuple<double, double, Eigen::VectorXd, Eigen::VectorXd> predict_with_grad(const Eigen::VectorXd& xs) const;
 
-    // void predict(const Eigen::MatrixXd& x, Eigen::MatrixXd& y, Eigen::MatrixXd& s2) const noexcept;
-    // void predict(size_t, const Eigen::VectorXd&x, double& y, double& s2) const noexcept;
-    // void predict(size_t, const Eigen::MatrixXd&x, Eigen::VectorXd& y, Eigen::VectorXd& s2) const noexcept;
-    // void predict_with_grad(size_t, const Eigen::VectorXd& x, double& y, double& s2, Eigen::VectorXd& grad_y, Eigen::VectorXd&  grad_s2) const noexcept;
-    // void predict_with_grad(size_t, const Eigen::MatrixXd& x, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& grad_y, Eigen::MatrixXd&  grad_s2) const noexcept;
-    
+    Eigen::VectorXd batch_predict_y(const Eigen::MatrixXd& xs)  const;
+    Eigen::VectorXd batch_predict_s2(const Eigen::MatrixXd& xs) const;
+    void batch_predict(const Eigen::MatrixXd& xs, Eigen::VectorXd& y, Eigen::VectorXd& s2)    const;
+
     Eigen::VectorXd select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp);
     Eigen::VectorXd sample_GP_1D(double lb, double ub);
 };

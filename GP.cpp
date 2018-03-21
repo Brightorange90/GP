@@ -31,8 +31,6 @@ GP::GP(const MatrixXd& train_in, const MatrixXd& train_out)
     _set_hyp_range();
 }
 
-
-// Append new training data
 void GP::add_data(const MatrixXd& x, const MatrixXd& y)
 {
     assert(static_cast<size_t>(x.rows()) == _dim);
@@ -87,8 +85,7 @@ MatrixXd GP::_covSEard(const VectorXd& hyp) const noexcept
 {
     const VectorXd inv_lscale = (-1 * hyp.head(_dim)).array().exp();
     const MatrixXd scaled_train_in = inv_lscale.asDiagonal() * _train_in;
-    MatrixXd K = exp(2 * hyp(_dim)) * (-0.5 * sdist_mm(scaled_train_in, scaled_train_in)).array().exp();
-    return K;
+    return exp(2 * hyp(_dim)) * (-0.5 * sdist_mm(scaled_train_in, scaled_train_in)).array().exp();
 }
 MatrixXd GP::_covSEard(const VectorXd& hyp, const MatrixXd& x) const noexcept
 {
@@ -173,10 +170,9 @@ double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) co
                 for(size_t i = 0; i < _dim; ++i)
                 {
                     // if A = A' and B = B' then trace(A * B) == sum(sum(A.*B))
-                    // g(i) = 0.5 * exp(-2 * hyp(i)) * (Q * (K.cwiseProduct(_utilGradMatrix.middleCols(_num_train * i, _num_train)))).trace();
                     g(i) = 0.5 * exp(-2 * hyp(i)) * QK.cwiseProduct(_utilGradMatrix.middleCols(_num_train * i, _num_train)).sum();  // log length scale
                 }
-                g(_dim)   = QK.sum();        // log sf,  trace(Q * K) == sum(sum(Q .* K)), I don't know why
+                g(_dim)   = QK.sum();        // log sf,  trace(Q * K) == sum(sum(Q .* K))
                 g(_dim+1) = sn2 * Q.trace(); // log sn
                 g(_dim+2) = -1*alpha.sum();  // mean
                 if(! g.allFinite())
@@ -236,13 +232,13 @@ double GP::train(const VectorXd& init_hyps)
     // make sure the starting point is valid
     vector<double> fake_g(hyp0.size(), 0);
     nlz          = f(hyp0, fake_g, this);
-    VectorXd eig_fakeg  = vec2hyp(fake_g);
+    VectorXd dummy_g  = vec2hyp(fake_g);
     if(_noise_free)
-        eig_fakeg[_dim + 1] = 0;
+        dummy_g[_dim + 1] = 0;
 #ifdef MYDEBUG
         cout << "Starting nlz: " << nlz << endl;
         _check_hyp_range(vec2hyp(hyp0));
-        double rel_err        = _likelihood_gradient_checking(vec2hyp(hyp0), eig_fakeg);
+        double rel_err        = _likelihood_gradient_checking(vec2hyp(hyp0), dummy_g);
         cout << "Relative error of gradient: " << rel_err << endl;
 #endif
 
@@ -258,9 +254,9 @@ double GP::train(const VectorXd& init_hyps)
     if(not _noise_free)
     {
         optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
-                size_t dim = hyp.size() - 3;
-                double sf = hyp[dim];
-                double sn = hyp[dim + 1];
+                const size_t dim = hyp.size() - 3;
+                const double sf = hyp[dim];
+                const double sn = hyp[dim + 1];
                 return sn - sf; // variance should be greater than noise
                 }, nullptr);
     }
@@ -286,17 +282,12 @@ double GP::train(const VectorXd& init_hyps)
 }
 void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, MatrixXd& gy, MatrixXd& gs2) const noexcept
 {
-    if(! _trained)
-    {
-        cerr << "Model not trained!" << endl;
-        exit(EXIT_FAILURE);
-    }
+    assert(_trained);
     const size_t num_test  = x.cols();
-    const VectorXd& vhyp   = _hyps;
-    const double sf2       = exp(2 * vhyp(_dim));
-    const double sn2       = exp(2 * vhyp(_dim + 1));
-    const double mean      = vhyp(_dim + 2);
-    const MatrixXd k_test  = _covSEard(vhyp, x);  // num_test * num_train;
+    const double sf2       = exp(2 * _hyps(_dim));
+    const double sn2       = exp(2 * _hyps(_dim + 1));
+    const double mean      = _hyps(_dim + 2);
+    const MatrixXd k_test  = _covSEard(_hyps, x);  // num_test * num_train;
     const MatrixXd kks     = _K_solver.solve(k_test.transpose());
     y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
     s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
@@ -304,7 +295,7 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
     {
         gy  = MatrixXd::Zero(_dim, num_test);
         gs2 = MatrixXd::Zero(_dim, num_test);
-        const MatrixXd inv_lscale = (-2 * vhyp.head(_dim)).array().exp();
+        const MatrixXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
         for(size_t i = 0; i < num_test; ++i)
         {
             MatrixXd Jt = (inv_lscale.asDiagonal() * (_train_in.colwise() - x.col(i))) * k_test.row(i).asDiagonal();
@@ -312,6 +303,113 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
             gs2.col(i)  = -2 * Jt * kks.col(i);
         }
     }
+}
+void GP::_predict_y(const Eigen::MatrixXd& x,  bool need_g, Eigen::VectorXd& y,  Eigen::MatrixXd& gy)  const noexcept
+{
+    assert(_trained);
+    const size_t num_test  = x.cols();
+    const double mean      = _hyps(_dim + 2);
+    const MatrixXd k_test  = _covSEard(_hyps, x);  // num_test * num_train;
+    y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
+    if(need_g)
+    {
+        gy  = MatrixXd::Zero(_dim, num_test);
+        const MatrixXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
+        for(size_t i = 0; i < num_test; ++i)
+        {
+            MatrixXd Jt = (inv_lscale.asDiagonal() * (_train_in.colwise() - x.col(i))) * k_test.row(i).asDiagonal();
+            gy.col(i)   = Jt * _invKys;
+        }
+    }
+}
+void GP::_predict_s2(const MatrixXd& x, bool need_g, VectorXd& s2, MatrixXd& gs2) const noexcept
+{
+    assert(_trained);
+    const size_t num_test  = x.cols();
+    const double sf2       = exp(2 * _hyps(_dim));
+    const double sn2       = exp(2 * _hyps(_dim + 1));
+    const MatrixXd k_test  = _covSEard(_hyps, x);  // num_test * num_train;
+    const MatrixXd kks     = _K_solver.solve(k_test.transpose());
+    s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
+    if(need_g)
+    {
+        gs2 = MatrixXd::Zero(_dim, num_test);
+        const MatrixXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
+        for(size_t i = 0; i < num_test; ++i)
+        {
+            MatrixXd Jt = (inv_lscale.asDiagonal() * (_train_in.colwise() - x.col(i))) * k_test.row(i).asDiagonal();
+            gs2.col(i)  = -2 * Jt * kks.col(i);
+        }
+    }
+}
+double GP::predict_y(const VectorXd& x) const
+{
+    VectorXd y; MatrixXd dummy_g;
+    _predict_y(x, false, y, dummy_g);
+    return y(0);
+}
+double GP::predict_s2(const VectorXd& x) const
+{
+    VectorXd s2; MatrixXd dummy_g;
+    _predict_s2(x, false, s2, dummy_g);
+    return s2(0);
+}
+double GP::predict_y_with_grad(const VectorXd& xs, VectorXd& g) const
+{
+    VectorXd y; MatrixXd gg;
+    _predict_y(xs, true, y, gg);
+    g = gg.col(0);
+    return y(0);
+}
+double GP::predict_s2_with_grad(const VectorXd& xs, VectorXd& g) const
+{
+    VectorXd s2; MatrixXd gg;
+    _predict_s2(xs, true, s2, gg);
+    g = gg.col(0);
+    return s2(0);
+}
+pair<double, VectorXd> GP::predict_y_with_grad(const VectorXd& x) const
+{
+    VectorXd y; MatrixXd gg;
+    _predict_y(x, true, y, gg);
+    return {y(0), gg.col(0)};
+}
+pair<double, VectorXd> GP::predict_s2_with_grad(const VectorXd& x) const
+{
+    VectorXd s2; MatrixXd gg;
+    _predict_s2(x, true, s2, gg);
+    return {s2(0), gg.col(0)};
+}
+void GP::predict(const VectorXd& x, double& y, double& s2) const
+{
+    VectorXd yy, ss2;
+    MatrixXd dummy_gy, dummy_gs2;
+    _predict(x, false, yy, ss2, dummy_gy, dummy_gs2);
+    y  = yy(0);
+    s2 = ss2(0);
+}
+void GP::predict_with_grad(const VectorXd& xs, double& y, double& s2, VectorXd& gy, VectorXd& gs2) const
+{
+    VectorXd yy, ss2;
+    MatrixXd dummy_gy, dummy_gs2;
+    _predict(xs, true, yy, ss2, dummy_gy, dummy_gs2);
+    y   = yy(0);
+    s2  = ss2(0);
+    gy  = dummy_gy.col(0);
+    gs2 = dummy_gs2.col(0);
+}
+std::tuple<double, double> GP::predict(const Eigen::VectorXd& xs) const
+{
+    double y, s2;
+    predict(xs, y, s2);
+    return std::tuple<double, double>(y, s2);
+}
+std::tuple<double, double, VectorXd, VectorXd> GP::predict_with_grad(const VectorXd& xs) const
+{
+    double y, s2;
+    VectorXd gy; VectorXd gs2;
+    predict_with_grad(xs, y, s2, gy, gs2);
+    return std::tuple<double, double, VectorXd, VectorXd>(y, s2, gy, gs2);
 }
 void GP::_setK()
 {
@@ -352,69 +450,6 @@ bool GP::_check_SPD(const MatrixXd& K) const
     return is_SPD;
 }
 const VectorXd& GP::get_hyp() const noexcept { return _hyps; }
-// void GP::predict(const MatrixXd& x, MatrixXd& y, MatrixXd& s2) const noexcept
-// {
-//     assert(static_cast<size_t>(x.rows()) == _dim);
-//     const size_t num_pred = x.cols();
-//     y  = MatrixXd::Zero(num_pred, _num_spec);
-//     s2 = MatrixXd::Zero(num_pred, _num_spec);
-//     for(size_t i = 0; i < _num_spec; ++i)
-//     {
-//         VectorXd vy(num_pred, 1);
-//         VectorXd vs2(num_pred, 1);
-//         MatrixXd gy;
-//         MatrixXd gs2;
-//         _predict(i, x, false, vy, vs2, gy, gs2);
-//         y.col(i)  = vy;
-//         s2.col(i) = vs2;
-//     }
-// }
-// void GP::predict(size_t spec_idx, const Eigen::VectorXd&x, double& y, double& s2) const noexcept
-// {
-//     VectorXd vy, vs2;
-//     predict(spec_idx, x, vy, vs2);
-//     y  = vy(0);
-//     s2 = vs2(0);
-// }
-// void GP::predict(size_t spec_idx, const Eigen::MatrixXd&x, Eigen::VectorXd& y, Eigen::VectorXd& s2) const noexcept
-// {
-//     MatrixXd dummy_gy, dummy_gs2;
-//     _predict(spec_idx, x, false, y, s2, dummy_gy, dummy_gs2);
-// }
-// void GP::predict_with_grad(size_t spec_idx, const Eigen::VectorXd& x, double& y, double& s2, Eigen::VectorXd& grad_y, Eigen::VectorXd& grad_s2) const noexcept
-// {
-//     VectorXd vy, vs2;
-//     MatrixXd gy, gs2;
-//     _predict(spec_idx, x, true, vy, vs2, gy, gs2);
-//     y       = vy(0);
-//     s2      = vs2(0);
-//     grad_y  = gy.col(0);
-//     grad_s2 = gs2.col(0);
-// }
-
-// void GP::predict_with_grad(
-//         size_t spec_idx,    const Eigen::MatrixXd& xs,
-//         Eigen::VectorXd& y, Eigen::VectorXd& s2,
-//         Eigen::MatrixXd& grad_y, Eigen::MatrixXd& grad_s2) const noexcept
-// {
-//     size_t num_test = xs.cols();
-
-//     y       = VectorXd(num_test, 1);
-//     s2      = VectorXd(num_test, 1);
-//     grad_y  = MatrixXd(_dim, num_test);
-//     grad_s2 = MatrixXd(_dim, num_test);
-
-//     for(size_t i = 0; i < num_test; ++i)
-//     {
-//         double tmp_y, tmp_s2;
-//         VectorXd tmp_gy, tmp_gs2;
-//         predict_with_grad(spec_idx, xs.col(i), tmp_y, tmp_s2, tmp_gy, tmp_gs2);
-//         y(i)           = tmp_y;
-//         s2(i)          = tmp_s2;
-//         grad_y.col(i)  = tmp_gy;
-//         grad_s2.col(i) = tmp_gs2;
-//     }
-// }
 VectorXd GP::select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp)
 {
     MVMO::MVMO_Obj calc_nlz = [&](const VectorXd& x)->double{
@@ -441,7 +476,6 @@ double GP::_likelihood_gradient_checking(const VectorXd& hyp, const VectorXd& gr
     VectorXd check_grad(_num_hyp);
     for(size_t i = 0; i < _num_hyp; ++i)
     {
-        VectorXd fake_g;
         VectorXd check_hyp = hyp;
         check_hyp[i]       = hyp[i] + epsi;
         double check_nlz1  = _calcNegLogProb(check_hyp);
