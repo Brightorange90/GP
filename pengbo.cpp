@@ -14,11 +14,7 @@ int main()
 
     GP gp(train_x, train_y);
     cout << "Start training" << endl;
-    auto t1 = std::chrono::high_resolution_clock::now();
     double nlz = gp.train();
-    auto t2 = std::chrono::high_resolution_clock::now();
-    auto training_time = std::chrono::duration_cast<std::chrono::seconds>(t2-t1);
-    cout << "Time of training: " << training_time.count() << endl;
     cout << "Negative log likelihood: " << nlz << endl;
     return 0;
 }

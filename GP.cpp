@@ -8,11 +8,11 @@
 #include <vector>
 #include <utility>
 #include <iomanip>
-#include <fstream>
 #include <map>
-#include <boost/exception/diagnostic_information.hpp>
+#include <chrono>
 using namespace std;
 using namespace Eigen;
+using namespace std::chrono;
 
 // train_in  :: dim * num_data
 // train_out :: num_data * num_spec
@@ -264,7 +264,10 @@ double GP::train(const VectorXd& init_hyps)
     }
     try
     {
+        auto t1 = chrono::high_resolution_clock::now();
         optimizer.optimize(hyp0, nlz);
+        auto t2 = chrono::high_resolution_clock::now();
+        cout << "Training time: " << duration_cast<chrono::seconds>(t2-t1).count() << " seconds" << endl;
     }
     catch(std::runtime_error& e)
     {
