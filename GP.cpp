@@ -148,6 +148,8 @@ double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) co
     ColPivHouseholderQR<MatrixXd> K_solver = (K+sn2*MatrixXd::Identity(_num_train, _num_train)).colPivHouseholderQr();
 
     double negLogProb = INF;
+    if(calc_grad)
+        g = VectorXd::Constant(_num_hyp, 1, INF);
     if(K_solver.info() == Eigen::Success and K_solver.isInvertible())
     {
         const VectorXd train_y = _train_out.array() - mean;
@@ -157,7 +159,7 @@ double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) co
         const double norm_const       = 0.5 * _num_train * log(2 * M_PI);
         negLogProb                    = data_fit_term + model_complexity + norm_const;
 #ifdef MYDEBUG
-        cout << "NegLogProb: " << negLogProb << ", Data fit: " << data_fit_term << ", model_complexity: " << model_complexity << endl;
+        cout << "NegLogProb: " << negLogProb << ", Data fit: " << data_fit_term << ", model_complexity: " << model_complexity << ", calc_grad: " << calc_grad << endl;
 #endif
         if(not isfinite(negLogProb))
             negLogProb = INF; // no NaN allowed
@@ -180,8 +182,7 @@ double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) co
                 if(! g.allFinite())
                 {
 #ifdef MYDEBUG
-                    cerr << "Gradient is not finite" << endl;
-                    exit(EXIT_FAILURE);
+                    cerr << "Gradient is not finite: " << g.transpose() << endl;
 #endif
                     negLogProb = INF;
                     g          = VectorXd::Constant(_num_hyp, INF);
@@ -241,11 +242,12 @@ double GP::train(const VectorXd& init_hyps)
 #ifdef MYDEBUG
         cout << "Starting nlz: " << nlz << endl;
         _check_hyp_range(vec2hyp(hyp0));
+        double rel_err        = _likelihood_gradient_checking(vec2hyp(hyp0), eig_fakeg);
+        cout << "Relative error of gradient: " << rel_err << endl;
 #endif
 
-    double rel_err        = _likelihood_gradient_checking(vec2hyp(hyp0), eig_fakeg);
-    nlopt::algorithm algo = (isfinite(rel_err) and rel_err < 0.05 and eig_fakeg.allFinite()) ? nlopt::LD_SLSQP : nlopt::LN_COBYLA;
-    size_t max_eval       = algo == nlopt::LD_SLSQP ? 160 : _num_hyp * 50;
+    nlopt::algorithm algo = nlopt::LD_SLSQP;
+    size_t max_eval       = 160;
 
     nlopt::opt optimizer(algo, hyp0.size());
     optimizer.set_maxeval(max_eval);

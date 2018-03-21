@@ -14,7 +14,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations") # Suppres
 # debug macro
 option(MYDEBUG "Debug macro for optimizer" OFF)
 if(MYDEBUG)
-    message(STATUS "Open debug marcro")
+    message(STATUS "Open debug marcro for GP")
     add_definitions(-DMYDEBUG)
     if(DEFINED RAND_SEED)
         message(STATUS "Rand seed is ${RAND_SEED}")
