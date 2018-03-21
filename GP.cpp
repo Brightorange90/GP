@@ -244,8 +244,8 @@ double GP::train(const VectorXd& init_hyps)
 #endif
 
     double rel_err        = _likelihood_gradient_checking(vec2hyp(hyp0), eig_fakeg);
-    nlopt::algorithm algo = (isfinite(rel_err) and rel_err < 0.05 and eig_fakeg.allFinite()) ? nlopt::LD_LBFGS : nlopt::LN_COBYLA;
-    size_t max_eval       = algo == nlopt::LD_LBFGS ? 160 : _num_hyp * 50;
+    nlopt::algorithm algo = (isfinite(rel_err) and rel_err < 0.05 and eig_fakeg.allFinite()) ? nlopt::LD_SLSQP : nlopt::LN_COBYLA;
+    size_t max_eval       = algo == nlopt::LD_SLSQP ? 160 : _num_hyp * 50;
 
     nlopt::opt optimizer(algo, hyp0.size());
     optimizer.set_maxeval(max_eval);
@@ -253,15 +253,15 @@ double GP::train(const VectorXd& init_hyps)
     optimizer.set_lower_bounds(hyp_lb);
     optimizer.set_upper_bounds(hyp_ub);
     optimizer.set_ftol_abs(1e-6);
-    // if(not _noise_free)
-    // {
-    //     optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
-    //             size_t dim = hyp.size() - 3;
-    //             double sf = hyp[dim];
-    //             double sn = hyp[dim + 1];
-    //             return sn - sf; // variance should be greater than noise
-    //             }, nullptr);
-    // }
+    if(not _noise_free)
+    {
+        optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
+                size_t dim = hyp.size() - 3;
+                double sf = hyp[dim];
+                double sn = hyp[dim + 1];
+                return sn - sf; // variance should be greater than noise
+                }, nullptr);
+    }
     try
     {
         optimizer.optimize(hyp0, nlz);
