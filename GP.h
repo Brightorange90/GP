@@ -100,5 +100,4 @@ public:
     void batch_predict(const Eigen::MatrixXd& xs, Eigen::VectorXd& y, Eigen::VectorXd& s2)    const;
 
     Eigen::VectorXd select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp);
-    Eigen::VectorXd sample_GP_1D(double lb, double ub);
 };
