@@ -411,6 +411,25 @@ std::tuple<double, double, VectorXd, VectorXd> GP::predict_with_grad(const Vecto
     predict_with_grad(xs, y, s2, gy, gs2);
     return std::tuple<double, double, VectorXd, VectorXd>(y, s2, gy, gs2);
 }
+VectorXd GP::batch_predict_y(const MatrixXd& xs)  const
+{
+    VectorXd ys;
+    MatrixXd dummy_g;
+    _predict_y(xs, false, ys, dummy_g);
+    return ys;
+}
+VectorXd GP::batch_predict_s2(const MatrixXd& xs) const
+{
+    VectorXd s2;
+    MatrixXd dummy_g;
+    _predict_s2(xs, false, s2, dummy_g);
+    return s2;
+}
+void GP::batch_predict(const MatrixXd& xs, VectorXd& y, VectorXd& s2) const
+{
+    MatrixXd dummy_gy, dummy_gs2;
+    _predict(xs, false, y, s2, dummy_gy, dummy_gs2);
+}
 void GP::_setK()
 {
     _invKys = VectorXd::Zero(_num_train);

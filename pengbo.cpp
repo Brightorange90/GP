@@ -28,5 +28,12 @@ int main(int arg_num, char** args)
     double nlz = gp.train(gp.get_default_hyps());
     cout << "Negative log likelihood: " << nlz << endl;
     cout << "Optimized hyperparameters:\n" << gp.get_hyp() << endl;
+
+    VectorXd predy  = gp.batch_predict_y(test_x);
+    VectorXd preds2 = gp.batch_predict_s2(test_x);
+
+    MatrixXd rec(predy.size(), 3);
+    rec << test_y, predy, preds2.array().sqrt();
+    cout << rec << endl;
     return 0;
 }

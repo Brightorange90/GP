@@ -95,7 +95,7 @@ public:
     std::tuple<double, double> predict(const Eigen::VectorXd& xs) const;
     std::tuple<double, double, Eigen::VectorXd, Eigen::VectorXd> predict_with_grad(const Eigen::VectorXd& xs) const;
 
-    Eigen::VectorXd batch_predict_y(const Eigen::MatrixXd& xs)  const;
+    Eigen::VectorXd batch_predict_y(const  Eigen::MatrixXd& xs)  const;
     Eigen::VectorXd batch_predict_s2(const Eigen::MatrixXd& xs) const;
     void batch_predict(const Eigen::MatrixXd& xs, Eigen::VectorXd& y, Eigen::VectorXd& s2)    const;
 
