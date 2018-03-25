@@ -38,3 +38,48 @@ MatrixXd CovSEard::dk_dx1(const VectorXd& hyp, const VectorXd& x1, const MatrixX
         dK.row(i) = K.cwiseProduct(dK.row(i));
     return dK;
 }
+std::pair<VectorXd, VectorXd> CovSEard::cov_hyp_range(const MatrixXd& xs, const VectorXd& ys) const
+{
+    VectorXd hyps_lb = VectorXd::Constant(num_hyp(), -1 * INF);
+    VectorXd hyps_ub = VectorXd::Constant(num_hyp(), 0.5 * log(0.5  * numeric_limits<double>::max()));
+    // // length scale
+    for(size_t i = 0; i < _dim; ++i)
+    {
+        // exp(-0.5 (\frac{magic_num}{exp(_hyps_lb[i]})^2) > (1.5 * \text{numeric_limits<double>::min()})
+        long max_idx, min_idx;
+        xs.row(i).maxCoeff(&max_idx);
+        xs.row(i).minCoeff(&min_idx);
+        const double distance  = xs(i, max_idx) - xs(i, min_idx);
+        const double magic_num = 0.05 * distance;
+
+        // ub1: exp(hyp[i])^2 < 0.05 * numeric_limits<double>::max()
+        // ub2: true == (exp(-1e-17) == 1.0), so we set -0.5 * \frac{distance^2}{exp(hyp[i])^2} < -1e-16
+        // ub2: exp(-0.5 * d^2 / l^2) > (1 - thres)
+        const double thres = 1e-4;
+        double ub1         = 0.5 * log(0.05 * numeric_limits<double>::max());
+        double ub2         = log(distance / sqrt(-2 * log(1 - thres)));
+
+        double lscale_lb = log(magic_num) - 0.5 * log(-2 * log(1.5 * numeric_limits<double>::min()));
+        double lscale_ub = min(ub1, ub2);
+        hyps_lb(i) = lscale_lb; 
+        hyps_ub(i) = lscale_ub; 
+    }
+
+    // variance
+    hyps_lb(_dim) = log(max(0.0, numeric_limits<double>::epsilon() * (ys.maxCoeff() - ys.minCoeff())));
+    hyps_ub(_dim) = log(10 * (ys.maxCoeff() - ys.minCoeff()));
+    return {hyps_lb, hyps_ub};
+}
+VectorXd CovSEard::default_hyp(const MatrixXd& xs, const VectorXd& ys) const
+{
+    VectorXd default_hyp(num_hyp());
+    for(size_t i = 0; i < _dim; ++i)
+        default_hyp(i) = log(stddev<RowVectorXd>(xs.row(i)));
+    default_hyp(_dim) = log(stddev<VectorXd>(ys));
+    return default_hyp;
+}
+double CovSEard::sf2(const Eigen::VectorXd& hyp) const
+{
+    assert((size_t)hyp.size() >= num_hyp());
+    return exp(2 * hyp(_dim));
+}

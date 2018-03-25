@@ -20,14 +20,14 @@ using namespace std::chrono;
 GP::GP(const MatrixXd& train_in, const MatrixXd& train_out)
     : _train_in(train_in),
       _train_out(train_out),
+      _cov(CovSEard(train_in.rows())), 
       _num_train(train_in.cols()), 
       _noise_lb(1e-3), 
       _dim(train_in.rows()),
-      _num_hyp(_dim + 3),
+      _num_hyp(_cov.num_hyp() + 2),
       _hyps_lb(VectorXd(_num_hyp)), 
       _hyps_ub(VectorXd(_num_hyp)), 
-      _trained(false), 
-      _cov(CovSEard(_dim))
+      _trained(false)
 {
     assert(_num_train == static_cast<size_t>(_train_out.rows()));
     _set_hyp_range();
@@ -98,13 +98,9 @@ void GP::set_noise_free(bool flag)
 VectorXd GP::get_default_hyps() const noexcept
 {
     VectorXd hyp(_num_hyp);
-    for(size_t i = 0; i < _dim; ++i)
-    {
-        hyp(i) = log(stddev<RowVectorXd>(_train_in.row(i)));
-    }
-    hyp(_dim)   = log(stddev<VectorXd>(_train_out) / sqrt(2));
-    hyp(_dim+1) = noise_free() ? -1 * INF : max(log(_noise_lb), log(stddev<VectorXd>(_train_out) * 1e-3));
-    hyp(_dim+2) = _train_out.mean();
+    hyp.head(_cov.num_hyp()) = _cov.default_hyp(_train_in, _train_out);
+    hyp(hyp.size()-2)        = noise_free() ? -1 * INF : max(log(_noise_lb), log(stddev<VectorXd>(_train_out) * 1e-3));
+    hyp(hyp.size()-1)        = _train_out.mean();
     return hyp;
 }
 void GP::_init() 
@@ -134,15 +130,14 @@ double GP::_calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd& grad) co
 {
     return _calcNegLogProb(hyp, grad, true);
 }
-double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) const
+double GP::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
-    assert(_num_hyp == _dim + 3);
-    VectorXd hyp = hyp_;
+    assert(_num_hyp == _cov.num_hyp() + 2);
     if(_noise_free)
-        assert(std::isinf(hyp(_dim + 1)));
+        assert(0 == _hyp_sn2(hyp));
 
-    const double sn2  = exp(2 * hyp(_dim + 1));
-    const double mean = hyp(_dim + 2);
+    const double sn2  = _hyp_sn2(hyp);
+    const double mean = _hyp_mean(hyp);
     MatrixXd K        = _cov.k(hyp.head(_cov.num_hyp()), _train_in, _train_in);
     ColPivHouseholderQR<MatrixXd> K_solver = (K+sn2*MatrixXd::Identity(_num_train, _num_train)).colPivHouseholderQr();
 
@@ -168,15 +163,15 @@ double GP::_calcNegLogProb(const VectorXd& hyp_, VectorXd& g, bool calc_grad) co
             {
                 g           = VectorXd::Constant(_num_hyp, INF);
                 MatrixXd Q  = K_solver.inverse() - alpha * alpha.transpose();
-                for(size_t i = 0; i < _dim + 1; ++i)
+                for(size_t i = 0; i < _cov.num_hyp(); ++i)
                 {
                     // if A = A' and B = B' then trace(A * B) == sum(sum(A.*B))
                     // g(i) = 0.5 * exp(-2 * hyp(i)) * QK.cwiseProduct(utilGradMatrix.middleCols(_num_train * i, _num_train)).sum();  // log length scale
                     MatrixXd dK = _cov.dk_dhyp(hyp.head(_cov.num_hyp()), i, _train_in, _train_in, K);
                     g(i) = 0.5 * (Q.cwiseProduct(dK)).sum();
                 }
-                g(_dim+1) = sn2 * Q.trace(); // log sn
-                g(_dim+2) = -1*alpha.sum();  // mean
+                g(_num_hyp-2) = sn2 * Q.trace(); // log sn
+                g(_num_hyp-1) = -1*alpha.sum();  // mean
                 if(! g.allFinite())
                 {
 #ifdef MYDEBUG
@@ -207,7 +202,7 @@ double GP::train(const VectorXd& init_hyps)
     };
     _hyps = init_hyps;
     if(_noise_free)
-        _hyps(_dim+1) = -1 * INF;
+        _hyps(_hyps.size()-2) = -1 * INF;
 
     double nlz = _calcNegLogProb(_hyps);
     if(not isfinite(nlz))
@@ -236,7 +231,7 @@ double GP::train(const VectorXd& init_hyps)
     nlz          = f(hyp0, fake_g, this);
     VectorXd dummy_g  = vec2hyp(fake_g);
     if(_noise_free)
-        dummy_g[_dim + 1] = 0;
+        dummy_g[_num_hyp-2] = 0;
 #ifdef MYDEBUG
         cout << "Starting nlz: " << nlz << endl;
         _check_hyp_range(vec2hyp(hyp0));
@@ -253,15 +248,15 @@ double GP::train(const VectorXd& init_hyps)
     optimizer.set_lower_bounds(hyp_lb);
     optimizer.set_upper_bounds(hyp_ub);
     optimizer.set_ftol_abs(1e-6);
-    if(not _noise_free)
-    {
-        optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
-                const size_t dim = hyp.size() - 3;
-                const double sf = hyp[dim];
-                const double sn = hyp[dim + 1];
-                return sn - sf; // variance should be greater than noise
-                }, nullptr);
-    }
+    // if(not _noise_free)
+    // {
+    //     optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
+    //             const size_t dim = hyp.size() - 3;
+    //             const double sf  = hyp[dim];
+    //             const double sn  = hyp[dim + 1];
+    //             return sn - sf; // variance should be greater than noise
+    //             }, nullptr);
+    // }
     try
     {
         auto t1 = chrono::high_resolution_clock::now();
@@ -286,9 +281,9 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
 {
     assert(_trained);
     const size_t num_test  = x.cols();
-    const double sf2       = exp(2 * _hyps(_dim));
-    const double sn2       = exp(2 * _hyps(_dim + 1));
-    const double mean      = _hyps(_dim + 2);
+    const double sf2       = _cov.sf2(_hyps);
+    const double sn2       = _hyp_sn2(_hyps);
+    const double mean      = _hyp_mean(_hyps);
     const MatrixXd k_test  = _cov.k(_hyps.head(_cov.num_hyp()), x, _train_in);
     const MatrixXd kks     = _K_solver.solve(k_test.transpose());
     y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
@@ -297,7 +292,6 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
     {
         gy  = MatrixXd::Zero(_dim, num_test);
         gs2 = MatrixXd::Zero(_dim, num_test);
-        const VectorXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
         for(size_t i = 0; i < num_test; ++i)
         {
             // XXX: assume k(x, x) = sigma_f^2
@@ -311,20 +305,16 @@ void GP::_predict_y(const Eigen::MatrixXd& x,  bool need_g, Eigen::VectorXd& y, 
 {
     assert(_trained);
     const size_t num_test  = x.cols();
-    const double mean      = _hyps(_dim + 2);
+    const double mean      = _hyp_mean(_hyps);
     const MatrixXd k_test  = _cov.k(_hyps.head(_cov.num_hyp()), x, _train_in);  // num_test * num_train;
     y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
     if(need_g)
     {
         gy  = MatrixXd::Zero(_dim, num_test);
-        const MatrixXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
         for(size_t i = 0; i < num_test; ++i)
         {
             const MatrixXd grad_ktest = _cov.dk_dx1(_hyps, x.col(i), _train_in);
             gy.col(i)           = grad_ktest * _invKys;
-            // gs2.col(i)          = -2 * grad_ktest * kks.col(i);
-            // MatrixXd Jt = (inv_lscale.asDiagonal() * (_train_in.colwise() - x.col(i))) * k_test.row(i).asDiagonal();
-            // gy.col(i)   = Jt * _invKys;
         }
     }
 }
@@ -332,21 +322,18 @@ void GP::_predict_s2(const MatrixXd& x, bool need_g, VectorXd& s2, MatrixXd& gs2
 {
     assert(_trained);
     const size_t num_test  = x.cols();
-    const double sf2       = exp(2 * _hyps(_dim));
-    const double sn2       = exp(2 * _hyps(_dim + 1));
+    const double sf2       = _cov.sf2(_hyps);
+    const double sn2       = _hyp_sn2(_hyps);
     const MatrixXd k_test  = _cov.k(_hyps.head(_cov.num_hyp()), x, _train_in);  // num_test * num_train;
     const MatrixXd kks     = _K_solver.solve(k_test.transpose());
     s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
     if(need_g)
     {
         gs2 = MatrixXd::Zero(_dim, num_test);
-        const MatrixXd inv_lscale = (-2 * _hyps.head(_dim)).array().exp();
         for(size_t i = 0; i < num_test; ++i)
         {
             const MatrixXd grad_ktest = _cov.dk_dx1(_hyps, x.col(i), _train_in);
             gs2.col(i)          = -2 * grad_ktest * kks.col(i);
-            // MatrixXd Jt = (inv_lscale.asDiagonal() * (_train_in.colwise() - x.col(i))) * k_test.row(i).asDiagonal();
-            // gs2.col(i)  = -2 * Jt * kks.col(i);
         }
     }
 }
@@ -443,21 +430,21 @@ void GP::_setK()
     _invKys = VectorXd::Zero(_num_train);
     const MatrixXd EyeM = MatrixXd::Identity(_num_train, _num_train);
     const MatrixXd Kcov = _cov.k(_hyps.head(_cov.num_hyp()), _train_in, _train_in);
-    double sn2          = exp(2 * _hyps(_num_hyp-2));
+    double sn2          = _hyp_sn2(_hyps);
     MatrixXd K          = sn2 * EyeM + Kcov;
     bool is_SPD         = _check_SPD(K);
     while(not is_SPD)
     {
         _hyps(_num_hyp-2) = std::isinf(_hyps(_num_hyp -2)) ? log(numeric_limits<double>::epsilon()) : _hyps(_num_hyp-2) + log(sqrt(10));
-        sn2                  = exp(2 * _hyps(_num_hyp-2));
-        K                    = sn2 * EyeM + Kcov;
+        sn2               = _hyp_sn2(_hyps);
+        K                 = sn2 * EyeM + Kcov;
 #ifdef MYDEBUG
         cerr << "Add noise  to " << sqrt(sn2) << endl;
 #endif
         is_SPD = _check_SPD(K);
     }
     _K_solver = K.colPivHouseholderQr();
-    _invKys   = _K_solver.solve(static_cast<VectorXd>(_train_out.array() - _hyps(_dim + 2)));
+    _invKys   = _K_solver.solve(static_cast<VectorXd>(_train_out.array() - _hyp_mean(_hyps)));
 }
 bool GP::_check_SPD(const MatrixXd& K) const
 {
@@ -482,8 +469,9 @@ VectorXd GP::select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp)
     MVMO::MVMO_Obj calc_nlz = [&](const VectorXd& x)->double{
         VectorXd transform_x = vec2hyp(convert(x));
         if(_noise_free)
-            transform_x(_dim + 1) = -1 * INF;
-        return transform_x(_dim) < transform_x(_dim + 1) ? INF : _calcNegLogProb(transform_x);
+            transform_x(_num_hyp-2) = -1 * INF;
+        // return transform_x(_dim) < transform_x(_dim + 1) ? INF : _calcNegLogProb(transform_x);
+        return _calcNegLogProb(transform_x);
     };
     VectorXd lb            = convert(hyp2vec(_hyps_lb));
     VectorXd ub            = convert(hyp2vec(_hyps_ub));
@@ -529,39 +517,18 @@ void GP::_set_hyp_range()
 {
     _hyps_lb = VectorXd::Constant(_num_hyp, -1 * INF);
     _hyps_ub = VectorXd::Constant(_num_hyp, 0.5 * log(0.5  * numeric_limits<double>::max()));
-    // length scale
-    for(size_t i = 0; i < _dim; ++i)
-    {
-        // exp(-0.5 (\frac{magic_num}{exp(_hyps_lb[i]})^2) > (1.5 * \text{numeric_limits<double>::min()})
-        long max_idx, min_idx;
-        _train_in.row(i).maxCoeff(&max_idx);
-        _train_in.row(i).minCoeff(&min_idx);
-        const double distance  = _train_in(i, max_idx) - _train_in(i, min_idx);
-        const double magic_num = 0.05 * distance;
 
-        // ub1: exp(hyp[i])^2 < 0.05 * numeric_limits<double>::max()
-        // ub2: true == (exp(-1e-17) == 1.0), so we set -0.5 * \frac{distance^2}{exp(hyp[i])^2} < -1e-16
-        // ub2: exp(-0.5 * d^2 / l^2) > (1 - thres)
-        const double thres = 1e-4;
-        double ub1         = 0.5 * log(0.05 * numeric_limits<double>::max());
-        double ub2         = log(distance / sqrt(-2 * log(1 - thres)));
-
-        double lscale_lb = log(magic_num) - 0.5 * log(-2 * log(1.5 * numeric_limits<double>::min()));
-        double lscale_ub = min(ub1, ub2);
-        _hyps_lb(i) = lscale_lb; 
-        _hyps_ub(i) = lscale_ub; 
-    }
-
-    // variance
-    _hyps_lb(_dim)     = log(max(_noise_lb, numeric_limits<double>::epsilon() * (_train_out.maxCoeff() - _train_out.minCoeff())));
-    _hyps_ub(_dim)     = log(10 * (_train_out.maxCoeff() - _train_out.minCoeff()));
-    
-    //mean
-    _hyps_lb(_dim + 2) = _train_out.minCoeff();
-    _hyps_ub(_dim + 2) = _train_out.maxCoeff();
+    pair<VectorXd, VectorXd> cov_range = _cov.cov_hyp_range(_train_in, _train_out);
+    _hyps_lb.head(_cov.num_hyp()) = cov_range.first;
+    _hyps_ub.head(_cov.num_hyp()) = cov_range.second;
 
     // noise
-    _hyps_lb(_dim + 1) = log(_noise_lb);
+    _hyps_lb(_num_hyp-2) = log(_noise_lb);
+    
+    //mean
+    _hyps_lb(_num_hyp - 1) = _train_out.minCoeff();
+    _hyps_ub(_num_hyp - 1) = _train_out.maxCoeff();
+
 }
 Eigen::VectorXd GP::vec2hyp(const std::vector<double>& vx) const
 {
@@ -571,10 +538,10 @@ Eigen::VectorXd GP::vec2hyp(const std::vector<double>& vx) const
         hyp = convert(vx);
     else
     {
-        for(size_t i = 0; i < _dim + 1; ++i)
+        for(size_t i = 0; i < _cov.num_hyp(); ++i)
             hyp(i) = vx[i];
-        hyp(_dim + 1) = -1 * INF;
-        hyp(_dim + 2) = vx.back();
+        hyp(_num_hyp - 2) = -1 * INF;
+        hyp(_num_hyp - 1) = vx.back();
     }
     return hyp;
 }
@@ -582,14 +549,24 @@ std::vector<double> GP::hyp2vec(const Eigen::VectorXd& hyp) const
 {
     assert((size_t)hyp.size() == _num_hyp);
     vector<double> vx(_noise_free ? _num_hyp - 1 : _num_hyp);
-    for(size_t i = 0; i < _dim + 1; ++i)
+    for(size_t i = 0; i < _cov.num_hyp(); ++i)
         vx[i] = hyp(i);
     if(_noise_free)
-        vx[_dim + 1] = hyp(_dim + 2);
+        vx[_num_hyp-2] = hyp(_num_hyp-1);
     else
     {
-        vx[_dim + 1] = hyp(_dim + 1);
-        vx[_dim + 2] = hyp(_dim + 2);
+        vx[_num_hyp-2] = hyp(_num_hyp-2);
+        vx[_num_hyp-1] = hyp(_num_hyp-1);
     }
     return vx;
+}
+double GP::_hyp_sn2(const VectorXd& hyp) const
+{
+    assert((size_t)hyp.size() == _num_hyp);
+    return exp(2*hyp(_num_hyp-2));
+}
+double GP::_hyp_mean(const Eigen::VectorXd& hyp) const
+{
+    assert((size_t)hyp.size() == _num_hyp);
+    return hyp(_num_hyp-1);
 }

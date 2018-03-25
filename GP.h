@@ -10,11 +10,11 @@
 // gradient of log likelihood within error tolerence
 // GP prediction
 // gradient of GP prediction
-
 class GP
 {
     Eigen::MatrixXd _train_in;
     Eigen::VectorXd _train_out;
+    CovSEard _cov;
     size_t _num_train;
     double _noise_lb; // lower bound of the signal noise
     const size_t _dim;
@@ -38,7 +38,6 @@ class GP
     // void _calcUtilGradM();
     // Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp) const noexcept;
     // Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp, const Eigen::MatrixXd& x) const noexcept;  
-    CovSEard _cov;
 
     // Initializing
     void _init();
@@ -62,6 +61,9 @@ class GP
 
     Eigen::VectorXd     vec2hyp(const std::vector<double>& vx) const;
     std::vector<double> hyp2vec(const Eigen::VectorXd& vx) const;
+
+    double _hyp_sn2(const Eigen::VectorXd& hyp) const;
+    double _hyp_mean(const Eigen::VectorXd& hyp) const;
 public:
     GP(const Eigen::MatrixXd& train_in, const Eigen::MatrixXd& train_out);
     void add_data(const Eigen::MatrixXd& train_in, const Eigen::MatrixXd& train_out);
