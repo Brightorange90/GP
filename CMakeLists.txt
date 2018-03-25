@@ -9,13 +9,14 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # https://eigen.tuxfamily.org/dox/TopicCMakeGuide.html
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations") # Suppress one warning from when compiling Eigen headers
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations -march=native") # Suppress one warning from when compiling Eigen headers
 
 # debug macro
 option(MYDEBUG "Debug macro for optimizer" OFF)
 if(MYDEBUG)
     message(STATUS "Open debug marcro for GP")
     add_definitions(-DMYDEBUG)
+    add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_NAN)
     if(DEFINED RAND_SEED)
         message(STATUS "Rand seed is ${RAND_SEED}")
         add_definitions(-DDEBUG_RAND_SEED=${RAND_SEED})
@@ -32,7 +33,7 @@ add_subdirectory(MVMO)
 include_directories(MVMO)
 
 # GP library
-set(LIBSRC util.cpp def.cpp GP.cpp)
+set(LIBSRC util.cpp def.cpp GP.cpp CovSEard.cpp)
 set(LIB GP)
 set(test pengbo.cpp)
 add_library(${LIB} ${LIBSRC})

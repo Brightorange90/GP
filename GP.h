@@ -1,5 +1,6 @@
 #pragma once
 #include "Eigen/Dense"
+#include "CovSEard.h"
 #include <string>
 #include <map>
 #include <vector>
@@ -26,19 +27,22 @@ class GP
     Eigen::VectorXd _hyps_lb;
     Eigen::VectorXd _hyps_ub;
 
-    Eigen::MatrixXd _utilGradMatrix; // utility matrix to calculate gradient of likelihood with SEard kernel
     Eigen::ColPivHouseholderQR<Eigen::MatrixXd> _K_solver;
     Eigen::VectorXd _invKys;
     bool _fixhyps    = false; // use fixed hyperparameters, do not train
     bool _noise_free = false;
     bool _trained;
 
+    // Covariance functions
+    // Eigen::MatrixXd _utilGradMatrix; // utility matrix to calculate gradient of likelihood with SEard kernel
+    // void _calcUtilGradM();
+    // Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp) const noexcept;
+    // Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp, const Eigen::MatrixXd& x) const noexcept;  
+    CovSEard _cov;
+
     // Initializing
     void _init();
-    void _calcUtilGradM();
     void _setK(); // precompute cholK, invKy after training
-    Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp) const noexcept;
-    Eigen::MatrixXd _covSEard(const Eigen::VectorXd& hyp, const Eigen::MatrixXd& x) const noexcept;  
 
     double _calcNegLogProb(const std::vector<double>&, std::vector<double>& g) const;
     double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd& g, bool calc_grad) const;
@@ -46,15 +50,15 @@ class GP
     double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd&) const;
 
     // predicting y has complexity of O(N) while predicting s2 needs O(N^2) complexity
-    // somethimes we only need the y prediction
+    // somethimes we only need the y prediction, calling predict_y would be faster
     void _predict(const Eigen::MatrixXd& x,    bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept;
     void _predict_y(const Eigen::MatrixXd& x,  bool need_g, Eigen::VectorXd& y,  Eigen::MatrixXd& gy)  const noexcept;
     void _predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept;
 
     void _set_hyp_range();
     void _check_hyp_range(const Eigen::VectorXd&) const noexcept;
-    double _likelihood_gradient_checking(const Eigen::VectorXd& hyp, const Eigen::VectorXd& grad);
     bool _check_SPD(const Eigen::MatrixXd& m) const;
+    double _likelihood_gradient_checking(const Eigen::VectorXd& hyp, const Eigen::VectorXd& grad);
 
     Eigen::VectorXd     vec2hyp(const std::vector<double>& vx) const;
     std::vector<double> hyp2vec(const Eigen::VectorXd& vx) const;
