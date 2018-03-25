@@ -75,26 +75,6 @@ void GP::set_noise_free(bool flag)
     if(_noise_free)
         _noise_lb = 0;
 }
-// void GP::_calcUtilGradM()
-// {
-//     _utilGradMatrix = MatrixXd(_num_train, _dim * _num_train);
-//     for(size_t i = 0; i < _dim; ++i)
-//     {
-//         _utilGradMatrix.middleCols(_num_train * i, _num_train) = sdist_mm(_train_in.row(i), _train_in.row(i));
-//     }
-// }
-// MatrixXd GP::_covSEard(const VectorXd& hyp) const noexcept
-// {
-//     const VectorXd inv_lscale = (-1 * hyp.head(_dim)).array().exp();
-//     const MatrixXd scaled_train_in = inv_lscale.asDiagonal() * _train_in;
-//     return exp(2 * hyp(_dim)) * (-0.5 * sdist_mm(scaled_train_in, scaled_train_in)).array().exp();
-// }
-// MatrixXd GP::_covSEard(const VectorXd& hyp, const MatrixXd& x) const noexcept
-// {
-//     const VectorXd inv_lscale = (-1 * hyp.head(_dim)).array().exp();
-//     return exp(2 * hyp(_dim)) *
-//            (-0.5 * sdist_mm(inv_lscale.asDiagonal() * x, inv_lscale.asDiagonal() * _train_in)).array().exp();
-// }
 VectorXd GP::get_default_hyps() const noexcept
 {
     VectorXd hyp(_num_hyp);
@@ -259,10 +239,14 @@ double GP::train(const VectorXd& init_hyps)
     // }
     try
     {
+#ifdef MYDEBUG
         auto t1 = chrono::high_resolution_clock::now();
         optimizer.optimize(hyp0, nlz);
         auto t2 = chrono::high_resolution_clock::now();
         cout << "Training time: " << duration_cast<chrono::seconds>(t2-t1).count() << " seconds" << endl;
+#elif
+        optimizer.optimize(hyp0, nlz);
+#endif
     }
     catch(std::runtime_error& e)
     {

@@ -35,13 +35,13 @@ include_directories(MVMO)
 # GP library
 set(LIBSRC util.cpp def.cpp GP.cpp CovSEard.cpp)
 set(LIB GP)
-set(test pengbo.cpp)
+set(test mygp.cpp)
 add_library(${LIB} ${LIBSRC})
-add_executable(pengbo ${test})
+add_executable(mygp ${test})
 target_link_libraries(${LIB} mvmo)
-target_link_libraries(pengbo ${LIB})
+target_link_libraries(mygp ${LIB})
 
-set_property(TARGET ${LIB} pengbo PROPERTY CXX_STANDARD 11)
+set_property(TARGET ${LIB} mygp PROPERTY CXX_STANDARD 11)
 
 if(NLOPT_PATH)
     message(STATUS "NLOPT_PATH: ${NLOPT_PATH}")
