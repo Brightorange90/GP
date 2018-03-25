@@ -1,6 +1,7 @@
 #pragma once
 #include "Eigen/Dense"
 #include "CovSEard.h"
+#include "CovSEiso.h"
 #include <string>
 #include <map>
 #include <vector>
@@ -14,7 +15,7 @@ class GP
 {
     Eigen::MatrixXd _train_in;
     Eigen::VectorXd _train_out;
-    CovSEard _cov;
+    CovSEiso _cov;
     size_t _num_train;
     double _noise_lb; // lower bound of the signal noise
     const size_t _dim;

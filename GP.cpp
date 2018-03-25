@@ -20,7 +20,7 @@ using namespace std::chrono;
 GP::GP(const MatrixXd& train_in, const MatrixXd& train_out)
     : _train_in(train_in),
       _train_out(train_out),
-      _cov(CovSEard(train_in.rows())), 
+      _cov(CovSEiso(train_in.rows())), 
       _num_train(train_in.cols()), 
       _noise_lb(1e-3), 
       _dim(train_in.rows()),

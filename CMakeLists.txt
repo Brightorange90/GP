@@ -33,7 +33,7 @@ add_subdirectory(MVMO)
 include_directories(MVMO)
 
 # GP library
-set(LIBSRC util.cpp def.cpp GP.cpp CovSEard.cpp)
+set(LIBSRC util.cpp def.cpp GP.cpp CovSEard.cpp CovSEiso.cpp)
 set(LIB GP)
 set(test mygp.cpp)
 add_library(${LIB} ${LIBSRC})
