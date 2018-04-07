@@ -104,22 +104,23 @@ double FITC::train(const VectorXd& _hyp)
 void FITC::_predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept
 {
     assert(not need_g);
-    const double sf2      = _cov->sf2(_hyps);
+    const VectorXd sf2    = _cov->diag_k(_hyps, x);
     const double sn2      = _hyp_sn2(_hyps);
     const double mean     = _hyp_mean(_hyps);
     const MatrixXd K_star = _cov->k(_hyps, x, _inducing);
     const MatrixXd KinvK  = _u_solver->solve(K_star.transpose()) - sn2 * _A_solver->solve(K_star.transpose());
     y  = (K_star * _alpha).array() + mean;
-    s2 = (sf2 + sn2 - (K_star * KinvK).diagonal().array()).cwiseMax(sn2);
+    s2 = (sn2 + (sf2 - (K_star * KinvK).diagonal()).array()).cwiseMax(sn2);
     if(need_g)
     {
         gy  = MatrixXd(_dim, x.cols());
         gs2 = MatrixXd(_dim, x.cols());
+        MatrixXd dK_diag = _cov->diag_dk_dx1(_hyps, x);
         for(long i = 0; i < x.cols(); ++i)
         {
             const MatrixXd grad_k = _cov->dk_dx1(_hyps, x.col(i), _inducing);
             gy.col(i)             = grad_k * _alpha;
-            gs2.col(i)            = -2 * grad_k * KinvK.col(i);
+            gs2.col(i)            = dK_diag.col(i) - 2 * grad_k * KinvK.col(i);
         }
     }
 }
@@ -143,27 +144,28 @@ void FITC::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s
 {
     assert(not need_g);
     assert(not need_g);
-    const double sf2      = _cov->sf2(_hyps);
+    const VectorXd sf2    = _cov->diag_k(_hyps, x);
     const double sn2      = _hyp_sn2(_hyps);
     const MatrixXd K_star = _cov->k(_hyps, x, _inducing);
     const MatrixXd KinvK  = _u_solver->solve(K_star.transpose()) - sn2 * _A_solver->solve(K_star.transpose());
 
-    s2  = (sf2 + sn2 - (K_star * KinvK).diagonal().array()).cwiseMax(sn2);
+    s2  = (sn2 + sf2.array() - (K_star * KinvK).diagonal().array()).cwiseMax(sn2);
     if(need_g)
     {
         gs2 = MatrixXd(_dim, x.cols());
+        MatrixXd dK_diag = _cov->diag_dk_dx1(_hyps, x);
         for(long i = 0; i < x.cols(); ++i)
         {
             const MatrixXd grad_k = _cov->dk_dx1(_hyps, x.col(i), _inducing);
-            gs2.col(i)            = -2 * grad_k * KinvK.col(i);
+            gs2.col(i)            = dK_diag.col(i) - 2 * grad_k * KinvK.col(i);
         }
     }
 }
 void FITC::_setK()
 {
     const double sn2   = _hyp_sn2(_hyps);
-    const double sf2   = _cov->sf2(_hyps);
     double jitter      = 1e-6 * sn2;
+    const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
     const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
     const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);
     const MatrixXd Kux = Kxu.transpose();
@@ -173,7 +175,7 @@ void FITC::_setK()
     _u_solver->decomp(Kuu + jitter * Eye);
     MatrixXd Kuu_inv_Kux = _u_solver->solve(Kux);
     MatrixXd Kxu_Kuu_inv = Kuu_inv_Kux.transpose();
-    VectorXd Gamma       = ((sf2+sn2) - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
+    VectorXd Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
     VectorXd inv_Gamma   = Gamma.cwiseInverse();
     MatrixXd A           = sn2 * Kuu + Kux * inv_Gamma.asDiagonal() * Kxu;
     _A_solver->decomp(A);
@@ -188,7 +190,7 @@ void FITC::_setK()
         _u_solver->decomp(Kuu + jitter * Eye);
         Kuu_inv_Kux = _u_solver->solve(Kux);
         Kxu_Kuu_inv = Kuu_inv_Kux.transpose();
-        Gamma       = ((sf2+sn2) - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
+        Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
         inv_Gamma   = Gamma.cwiseInverse();
         A           = sn2 * Kuu + Kux * inv_Gamma.asDiagonal() * Kxu;
         _A_solver->decomp(A);
@@ -198,7 +200,7 @@ void FITC::_setK()
 double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
     const double sn2       = _hyp_sn2(hyp);
-    const double sf2       = _cov->sf2(hyp);
+    const VectorXd sf2     = _cov->diag_k(hyp, _train_in);
     const MatrixXd Kuu     = _cov->k(hyp, _inducing, _inducing);
     const MatrixXd Kxu     = _cov->k(hyp, _train_in, _inducing);
     const MatrixXd Kux     = Kxu.transpose();
@@ -209,7 +211,7 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
     u_solver->decomp(Kuu);
     const MatrixXd Kuu_inv_Kux = u_solver->solve(Kux);
     const MatrixXd Kxu_Kuu_inv = Kuu_inv_Kux.transpose();
-    const VectorXd Gamma       = ((sf2+sn2) - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
+    const VectorXd Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
     const VectorXd inv_Gamma   = Gamma.cwiseInverse();
     const MatrixXd A           = sn2 * Kuu + Kux * inv_Gamma.asDiagonal() * Kxu;
     A_solver->decomp(A);
@@ -238,12 +240,9 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
         MatrixXd dKuu              = MatrixXd::Zero(_num_inducing, _num_inducing);
         MatrixXd dKux              = MatrixXd::Zero(_num_inducing, _num_train);
         MatrixXd dKxu              = MatrixXd::Zero(_num_train, _num_inducing);
-        VectorXd dKn_diag          = VectorXd::Zero(_num_train, 1);
         VectorXd dGamma            = VectorXd::Zero(_num_train, 1);
         MatrixXd dA                = MatrixXd::Zero(_num_inducing, _num_inducing);
-        VectorXd inv_Gamma_y       = VectorXd::Zero(_num_train, 1);
         VectorXd gamma_inv_Gamma_y = VectorXd::Zero(_num_train, 1);
-        VectorXd F                 = VectorXd::Zero(_num_inducing, 1);
         VectorXd dF                = VectorXd::Zero(_num_inducing, 1);
 
         // const MatrixXd Kt             = Kuu_inv_Kux.transpose();
@@ -251,27 +250,29 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
         const MatrixXd inv_Gamma_Kxu  = Kux_invGamma.transpose();
 
         // length scales and variance
+        const MatrixXd dKn_diag    = _cov->diag_dk_dhyp(hyp, _train_in).transpose();
+        const VectorXd inv_Gamma_y = inv_Gamma.cwiseProduct(train_y);
+        const VectorXd F           = Kux * inv_Gamma_y;
+
         for(size_t i = 0; i < _cov->num_hyp(); ++i)
         {
             dKuu     = _cov->dk_dhyp(hyp, i, _inducing, _inducing, Kuu);
             dKxu     = _cov->dk_dhyp(hyp, i, _train_in, _inducing, Kxu);
             dKux     = dKxu.transpose();
-            dKn_diag = VectorXd::Constant(_num_train, 1, (i == _cov->num_hyp() - 1) ? 2 * _cov->sf2(hyp) : 0);
 
             // XXX: bottleneck, O(Nm^2) complexity
-            dGamma = (dKn_diag  - Kxu_Kuu_inv.cwiseProduct(2 * dKxu - Kxu_Kuu_inv * dKuu).rowwise().sum()) / sn2;
+            dGamma = (dKn_diag.col(i)  - Kxu_Kuu_inv.cwiseProduct(2 * dKxu - Kxu_Kuu_inv * dKuu).rowwise().sum()) / sn2;
             dA     = sn2 * dKuu + 2 * _sym(Kux_invGamma * dKxu) - Kux_invGamma  * dGamma.asDiagonal() * inv_Gamma_Kxu;
 
             // O(2m^2+m) = O(m^2)
             double dl1 = (A_inv.cwiseProduct(dA).sum() - Kuu_inv.cwiseProduct(dKuu).sum() + inv_Gamma.cwiseProduct(dGamma).sum());
 
-            inv_Gamma_y       = inv_Gamma.cwiseProduct(train_y);
-            gamma_inv_Gamma_y = inv_Gamma.cwiseProduct(dGamma.cwiseProduct(inv_Gamma_y));
-            F                 = Kux  * inv_Gamma_y;
-            dF                = dKux * inv_Gamma_y - Kux * gamma_inv_Gamma_y;
 
+            gamma_inv_Gamma_y = inv_Gamma.cwiseProduct(dGamma.cwiseProduct(inv_Gamma_y));
+            dF                = dKux * inv_Gamma_y - Kux * gamma_inv_Gamma_y;
             double dl2_1 = -1  * train_y.dot(gamma_inv_Gamma_y);
             double dl2_2 = -1  * F.dot(A_inv * (dA * (A_inv * F))) + 2 * F.dot(A_inv * dF);
+
             g(i)         = 0.5 * (dl1 + (dl2_1 - dl2_2) / sn2);
         }
 

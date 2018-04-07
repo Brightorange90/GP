@@ -274,23 +274,24 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
 {
     assert(_trained);
     const size_t num_test  = x.cols();
-    const double sf2       = _cov->sf2(_hyps);
+    const VectorXd sf2     = _cov->diag_k(_hyps, x);
     const double sn2       = _hyp_sn2(_hyps);
     const double mean      = _hyp_mean(_hyps);
     const MatrixXd k_test  = _cov->k(_hyps.head(_cov->num_hyp()), x, _train_in);
     const MatrixXd kks     = _matrix_solver->solve(k_test.transpose());
     y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
-    s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
+    s2 = (sf2 - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
     if(need_g)
     {
-        gy  = MatrixXd::Zero(_dim, num_test);
-        gs2 = MatrixXd::Zero(_dim, num_test);
+        gy               = MatrixXd::Zero(_dim, num_test);
+        gs2              = MatrixXd::Zero(_dim, num_test);
+        MatrixXd dk_diag = _cov->diag_dk_dx1(_hyps, x);
         for(size_t i = 0; i < num_test; ++i)
         {
             // XXX: assume k(x, x) = sigma_f^2
             const MatrixXd grad_ktest = _cov->dk_dx1(_hyps, x.col(i), _train_in);
-            gy.col(i)    = grad_ktest * _invKys;
-            gs2.col(i)   = -2 * grad_ktest * kks.col(i);
+            gy.col(i)                 = grad_ktest * _invKys;
+            gs2.col(i)                = dk_diag.col(i) -2 * grad_ktest * kks.col(i);
         }
     }
 }
@@ -307,7 +308,7 @@ void GP::_predict_y(const Eigen::MatrixXd& x,  bool need_g, Eigen::VectorXd& y, 
         for(size_t i = 0; i < num_test; ++i)
         {
             const MatrixXd grad_ktest = _cov->dk_dx1(_hyps, x.col(i), _train_in);
-            gy.col(i)           = grad_ktest * _invKys;
+            gy.col(i)                 = grad_ktest * _invKys;
         }
     }
 }
@@ -315,18 +316,19 @@ void GP::_predict_s2(const MatrixXd& x, bool need_g, VectorXd& s2, MatrixXd& gs2
 {
     assert(_trained);
     const size_t num_test  = x.cols();
-    const double sf2       = _cov->sf2(_hyps);
+    const VectorXd sf2     = _cov->diag_k(_hyps, x);
     const double sn2       = _hyp_sn2(_hyps);
     const MatrixXd k_test  = _cov->k(_hyps.head(_cov->num_hyp()), x, _train_in);  // num_test * num_train;
     const MatrixXd kks     = _matrix_solver->solve(k_test.transpose());
-    s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
+    s2 = (sf2 - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
     if(need_g)
     {
-        gs2 = MatrixXd::Zero(_dim, num_test);
+        gs2                    = MatrixXd::Zero(_dim, num_test);
+        const MatrixXd dk_diag = _cov->diag_dk_dx1(_hyps, x);
         for(size_t i = 0; i < num_test; ++i)
         {
             const MatrixXd grad_ktest = _cov->dk_dx1(_hyps, x.col(i), _train_in);
-            gs2.col(i)          = -2 * grad_ktest * kks.col(i);
+            gs2.col(i)                = dk_diag.col(i) -2 * grad_ktest * kks.col(i);
         }
     }
 }
@@ -465,7 +467,8 @@ VectorXd GP::select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp)
         if(_noise_free)
             transform_x(_num_hyp-2) = -1 * INF;
         assert((size_t)transform_x.size() == _num_hyp);
-        double nlz =  _hyp_sn2(transform_x) > _cov->sf2(transform_x) ? INF : _calcNegLogProb(transform_x);
+        const double sf2 = _cov->diag_k(transform_x, _train_in).mean();
+        double nlz       = _hyp_sn2(transform_x) > sf2 ? INF : _calcNegLogProb(transform_x);
         return nlz;
     };
     VectorXd lb            = convert(hyp2vec(_hyps_lb));

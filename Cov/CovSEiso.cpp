@@ -83,8 +83,30 @@ VectorXd CovSEiso::default_hyp(const MatrixXd&, const VectorXd& ys) const
     default_hyp(1) = log(stddev<VectorXd>(ys));
     return default_hyp;
 }
-double CovSEiso::sf2(const Eigen::VectorXd& hyp) const
+VectorXd CovSEiso::diag_k(const VectorXd& hyp, const MatrixXd& x) const 
 {
-    assert((size_t)hyp.size() >= num_hyp());
-    return exp(2 * hyp(1));
+    const double sf2 = exp(2 * hyp(1));
+    return VectorXd::Constant(x.cols(), 1, sf2);
+}
+MatrixXd CovSEiso::diag_dk_dhyp(const VectorXd& hyp, const MatrixXd& x) const
+{
+    const double sf2 = exp(2 * hyp(1));
+    MatrixXd grad    = MatrixXd::Zero(hyp.size(), x.cols());
+    grad.row(_dim)   = RowVectorXd::Constant(1, grad.cols(), 2*sf2);
+    return grad;
+}
+MatrixXd CovSEiso::diag_dk_dhyp(const VectorXd& hyp, const MatrixXd& x, const MatrixXd&) const
+{
+    const double sf2 = exp(2 * hyp(1));
+    MatrixXd grad    = MatrixXd::Zero(hyp.size(), x.cols());
+    grad.row(_dim)   = RowVectorXd::Constant(1, grad.cols(), 2*sf2);
+    return grad;
+}
+MatrixXd CovSEiso::diag_dk_dx1(const VectorXd&, const VectorXd& x, const RowVectorXd&) const
+{
+    return MatrixXd::Zero(_dim, x.cols());
+}
+MatrixXd CovSEiso::diag_dk_dx1(const VectorXd&, const VectorXd& x) const
+{
+    return MatrixXd::Zero(_dim, x.cols());
 }
