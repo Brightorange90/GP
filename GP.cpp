@@ -17,10 +17,13 @@ using namespace std::chrono;
 
 // train_in  :: dim * num_data
 // train_out :: num_data * num_spec
-GP::GP(const MatrixXd& train_in, const MatrixXd& train_out, CovFunc cf)
+GP::GP(const MatrixXd& train_in, const MatrixXd& train_out, CovFunc cf, MatrixDecomp md)
     : _train_in(train_in),
       _train_out(train_out),
+      _cf(cf), 
+      _md(md),
       _cov(_specify_cov(train_in.rows(), cf)), 
+      _matrix_solver(_specify_matrix_solver(md)), 
       _num_train(train_in.cols()), 
       _noise_lb(1e-3), 
       _dim(train_in.rows()),
@@ -34,6 +37,7 @@ GP::GP(const MatrixXd& train_in, const MatrixXd& train_out, CovFunc cf)
 }
 GP::~GP(){
     delete _cov;
+    delete _matrix_solver;
 }
 
 void GP::add_data(const MatrixXd& x, const MatrixXd& y)
@@ -122,17 +126,19 @@ double GP::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) con
     const double sn2  = _hyp_sn2(hyp);
     const double mean = _hyp_mean(hyp);
     MatrixXd K        = _cov->k(hyp.head(_cov->num_hyp()), _train_in, _train_in);
-    ColPivHouseholderQR<MatrixXd> K_solver = (K+sn2*MatrixXd::Identity(_num_train, _num_train)).colPivHouseholderQr();
+    _matrix_solver->decomp(K+sn2*MatrixXd::Identity(_num_train, _num_train));
+    // ColPivHouseholderQR<MatrixXd> K_solver = (K+sn2*MatrixXd::Identity(_num_train, _num_train)).colPivHouseholderQr();
 
     double negLogProb = INF;
     if(calc_grad)
         g = VectorXd::Constant(_num_hyp, 1, INF);
-    if(K_solver.info() == Eigen::Success and K_solver.isInvertible())
+    // if(K_solver.info() == Eigen::Success and K_solver.isInvertible())
+    if(_matrix_solver->check_SPD())
     {
         const VectorXd train_y = _train_out.array() - mean;
-        VectorXd alpha         = K_solver.solve(train_y);
+        VectorXd alpha         = _matrix_solver->solve(train_y);
         const double data_fit_term    = 0.5 * train_y.dot(alpha);
-        const double model_complexity = 0.5 * K_solver.logAbsDeterminant();
+        const double model_complexity = 0.5 * _matrix_solver->log_det();
         const double norm_const       = 0.5 * _num_train * log(2 * M_PI);
         negLogProb                    = data_fit_term + model_complexity + norm_const;
 #ifdef MYDEBUG
@@ -145,7 +151,7 @@ double GP::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) con
             if(calc_grad)
             {
                 g           = VectorXd::Constant(_num_hyp, INF);
-                MatrixXd Q  = K_solver.inverse() - alpha * alpha.transpose();
+                MatrixXd Q  = _matrix_solver->inverse() - alpha * alpha.transpose();
                 for(size_t i = 0; i < _cov->num_hyp(); ++i)
                 {
                     // if A = A' and B = B' then trace(A * B) == sum(sum(A.*B))
@@ -272,7 +278,7 @@ void GP::_predict(const MatrixXd& x, bool need_g, VectorXd& y, VectorXd& s2, Mat
     const double sn2       = _hyp_sn2(_hyps);
     const double mean      = _hyp_mean(_hyps);
     const MatrixXd k_test  = _cov->k(_hyps.head(_cov->num_hyp()), x, _train_in);
-    const MatrixXd kks     = _K_solver.solve(k_test.transpose());
+    const MatrixXd kks     = _matrix_solver->solve(k_test.transpose());
     y  = VectorXd::Constant(num_test, 1, mean) + k_test * _invKys;
     s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
     if(need_g)
@@ -312,7 +318,7 @@ void GP::_predict_s2(const MatrixXd& x, bool need_g, VectorXd& s2, MatrixXd& gs2
     const double sf2       = _cov->sf2(_hyps);
     const double sn2       = _hyp_sn2(_hyps);
     const MatrixXd k_test  = _cov->k(_hyps.head(_cov->num_hyp()), x, _train_in);  // num_test * num_train;
-    const MatrixXd kks     = _K_solver.solve(k_test.transpose());
+    const MatrixXd kks     = _matrix_solver->solve(k_test.transpose());
     s2 = (VectorXd::Constant(num_test, 1, sf2) - k_test.cwiseProduct(kks.transpose()).rowwise().sum()).cwiseMax(0) + VectorXd::Constant(num_test, 1, sn2);
     if(need_g)
     {
@@ -430,8 +436,9 @@ void GP::_setK()
 #endif
         is_SPD = _check_SPD(K);
     }
-    _K_solver = K.colPivHouseholderQr();
-    _invKys   = _K_solver.solve(static_cast<VectorXd>(_train_out.array() - _hyp_mean(_hyps)));
+    _matrix_solver->decomp(K);
+    // _K_solver = K.colPivHouseholderQr();
+    _invKys   = _matrix_solver->solve(static_cast<VectorXd>(_train_out.array() - _hyp_mean(_hyps)));
 }
 bool GP::_check_SPD(const MatrixXd& K) const
 {
@@ -440,13 +447,13 @@ bool GP::_check_SPD(const MatrixXd& K) const
     const size_t size     = K.rows();
     const MatrixXd Eye    = MatrixXd::Identity(size, size);
     const VectorXd eigenv = K.selfadjointView<Lower>().eigenvalues();
-    const ColPivHouseholderQR<MatrixXd> K_solver   = K.colPivHouseholderQr();
-    const double inv_err  = (Eye - K * K_solver.solve(Eye)).cwiseAbs().mean();
     const double cond     = abs(eigenv.maxCoeff() / eigenv.minCoeff());
-    const bool is_SPD     = (inv_err < 1e-4) and (eigenv.array() >= 0).all() and K_solver.info() == Eigen::Success and K_solver.isInvertible();
+    _matrix_solver->decomp(K);
+    const double inv_err  = (Eye - K * _matrix_solver->inverse()).cwiseAbs().mean();
+    const bool is_SPD     = (inv_err < 1e-4) and (eigenv.array() >= 0).all() and _matrix_solver->check_SPD();
 #ifdef MYDEBUG
     if(not is_SPD)
-        cerr << "Inv_err: " << inv_err << ", cond: " << cond << ", DecompSuccess: " << (K_solver.info() == Eigen::Success) << ", isInvertible: " << K_solver.isInvertible() << endl;
+        cerr << "Inv_err: " << inv_err << ", cond: " << cond << ", DecompSuccess: " << _matrix_solver->check_SPD() << endl;
 #endif
     return is_SPD;
 }
@@ -457,8 +464,9 @@ VectorXd GP::select_init_hyp(size_t max_eval, const Eigen::VectorXd& def_hyp)
         VectorXd transform_x = vec2hyp(convert(x));
         if(_noise_free)
             transform_x(_num_hyp-2) = -1 * INF;
-        // return transform_x(_dim) < transform_x(_dim + 1) ? INF : _calcNegLogProb(transform_x);
-        return _calcNegLogProb(transform_x);
+        assert((size_t)transform_x.size() == _num_hyp);
+        double nlz =  _hyp_sn2(transform_x) > _cov->sf2(transform_x) ? INF : _calcNegLogProb(transform_x);
+        return nlz;
     };
     VectorXd lb            = convert(hyp2vec(_hyps_lb));
     VectorXd ub            = convert(hyp2vec(_hyps_ub));
@@ -511,6 +519,7 @@ void GP::_set_hyp_range()
 
     // noise
     _hyps_lb(_num_hyp-2) = log(_noise_lb);
+    _hyps_ub(_num_hyp-2) = _hyps_ub(_cov->num_hyp()-1);
     
     //mean
     _hyps_lb(_num_hyp - 1) = _train_out.minCoeff();
@@ -557,7 +566,7 @@ double GP::_hyp_mean(const Eigen::VectorXd& hyp) const
     assert((size_t)hyp.size() == _num_hyp);
     return hyp(_num_hyp-1);
 }
-Cov* GP::_specify_cov(size_t d, CovFunc cf)
+Cov* GP::_specify_cov(size_t d, CovFunc cf) const
 {
     switch(cf)
     {
@@ -567,6 +576,19 @@ Cov* GP::_specify_cov(size_t d, CovFunc cf)
             return new CovSEiso(d);
         default:
             cerr << "Unknown cov: " << cf << endl;
+            exit(EXIT_FAILURE);
+    }
+}
+MatrixSolver* GP::_specify_matrix_solver(GP::MatrixDecomp md) const
+{
+    switch(md)
+    {
+        case MatrixDecomp::Cholesky:
+            return new MatrixSolverLLT();
+        case MatrixDecomp::QR:
+            return new MatrixSolverQR();
+        default:
+            cerr << "Unknown matrix decomposition: " << md << endl;
             exit(EXIT_FAILURE);
     }
 }

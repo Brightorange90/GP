@@ -72,6 +72,11 @@ MatrixXd sdist_mm(const MatrixXd& X, const MatrixXd& Y)
     for(size_t i = 0; i < (size_t)Y.cols(); ++i)
         dists.col(i) = sdist_vm(Y.col(i), X);
     return dists;
+
+    // MatrixXd d = (X.cwiseProduct(X).colwise().sum().transpose().replicate(1, Y.cols())
+    //     +         Y.cwiseProduct(Y).colwise().sum().replicate(X.cols(), 1)
+    //     -  2 * X.transpose() * Y).cwiseMax(0);
+    // return d;
 }
 
 VectorXd std2eig(const vector<double>& vec) { return Eigen::Map<const VectorXd>(&vec[0], vec.size()); }

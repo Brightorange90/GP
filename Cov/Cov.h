@@ -1,15 +1,15 @@
 #pragma once
 #include <Eigen/Dense>
-#include "def.h"
-#include "util.h"
+#include "../def.h"
+#include "../util.h"
 class Cov
 {
-    // XXX: assume Cov(hyp, x, x) = hyp(num_hyp-1)^2
+    // XXX: assume Cov(hyp, x, x) = hyp(num_hyp-1)^2, so Cov(hyp, x, y) = sf2 * R(hyp, x, y) where R(hyp, x, x) = 1
 protected:
     size_t _dim;
 
 public:
-    Cov(size_t d) : _dim(d){}
+    explicit Cov(size_t d) : _dim(d){}
     virtual ~Cov(){}
     virtual size_t num_hyp() const = 0;
     virtual Eigen::MatrixXd k(const Eigen::VectorXd& hyp, const Eigen::MatrixXd& x1, const Eigen::MatrixXd& x2) const = 0;

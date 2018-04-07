@@ -1,9 +1,9 @@
 #pragma once
 #include "Cov.h"
-class CovSEard : public Cov
+class CovSEiso : public Cov
 {
 public:
-    CovSEard(size_t d);
+    explicit CovSEiso(size_t d);
     size_t num_hyp() const;
     Eigen::MatrixXd k(const Eigen::VectorXd& hyp, const Eigen::MatrixXd& x1, const Eigen::MatrixXd& x2) const;
     Eigen::MatrixXd dk_dhyp(const Eigen::VectorXd& hyp, size_t idx, const Eigen::MatrixXd& x1, const Eigen::MatrixXd& x2) const;
