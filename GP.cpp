@@ -236,7 +236,7 @@ double GP::train(const VectorXd& init_hyps)
     optimizer.set_min_objective(f, this);
     optimizer.set_lower_bounds(hyp_lb);
     optimizer.set_upper_bounds(hyp_ub);
-    optimizer.set_ftol_abs(1e-6);
+    // optimizer.set_ftol_abs(1e-6);
     // if(not _noise_free)
     // {
     //     optimizer.add_inequality_constraint( [](const vector<double>& hyp, vector<double>&, void*) -> double {
