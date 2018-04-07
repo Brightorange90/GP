@@ -33,18 +33,21 @@ add_subdirectory(MVMO)
 include_directories(MVMO)
 
 # GP library
-set(LIBSRC util.cpp def.cpp GP.cpp FITC.cpp MatrixSolver.cpp Cov/CovSEard.cpp Cov/CovSEiso.cpp)
+set(LIBSRC util.cpp def.cpp GP.cpp FITC.cpp VFE.cpp MatrixSolver.cpp Cov/CovSEard.cpp Cov/CovSEiso.cpp)
 set(LIB GP)
 set(test mygp.cpp)
 set(test_fitc test_fitc.cpp)
+set(test_vfe test_vfe.cpp)
 add_library(${LIB} ${LIBSRC})
 add_executable(gp   ${test})
 add_executable(fitc ${test_fitc})
+add_executable(vfe ${test_fitc})
 target_link_libraries(${LIB} mvmo)
 target_link_libraries(gp   ${LIB})
 target_link_libraries(fitc ${LIB})
+target_link_libraries(vfe ${LIB})
 
-set_property(TARGET ${LIB} gp fitc PROPERTY CXX_STANDARD 11)
+set_property(TARGET ${LIB} gp fitc vfe PROPERTY CXX_STANDARD 11)
 
 if(NLOPT_PATH)
     message(STATUS "NLOPT_PATH: ${NLOPT_PATH}")
