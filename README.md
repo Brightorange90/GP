@@ -15,7 +15,8 @@ A library for gaussian process regression, I write this library for my Ph.D rese
 
 ## TODO
 
-- VFE and FITC approximation
+- VFE approximation
+- Diagonal of covariance function
 
 
 ## Usage
