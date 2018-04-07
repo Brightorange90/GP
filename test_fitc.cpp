@@ -37,14 +37,17 @@ int main(int arg_num, char** args)
     auto t1              = chrono::high_resolution_clock::now();
     double nlz           = gp.train(gp.get_default_hyps());
     auto t2              = chrono::high_resolution_clock::now();
-    double training_time = duration_cast<chrono::seconds>(t2-t1).count();
+    size_t training_time = duration_cast<chrono::seconds>(t2-t1).count();
     cout << "Training time: " << training_time << " seconds" << endl;
     cout << "Negative log likelihood: " << nlz << endl;
     cout << "Optimized hyperparameters:\n" << gp.get_hyp() << endl;
 
-    // gp.test_obj(gp.get_hyp());
-    VectorXd predy  = gp.batch_predict_y(test_x);
-    VectorXd preds2 = gp.batch_predict_s2(test_x);
+    auto t3                = chrono::high_resolution_clock::now();
+    VectorXd predy         = gp.batch_predict_y(test_x);
+    VectorXd preds2        = gp.batch_predict_s2(test_x);
+    auto t4                = chrono::high_resolution_clock::now();
+    double prediction_time = 1e-6 * (double)(duration_cast<chrono::microseconds>(t4 - t3).count());
+    cout << "Prediction time: " << prediction_time << " seconds" << endl;
 
     MatrixXd rec(test_x.cols(), 2);
     rec << predy, preds2.cwiseSqrt();
