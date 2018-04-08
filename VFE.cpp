@@ -1,6 +1,7 @@
 #include "VFE.h"
 #include "MatrixSolver.h"
 #include <fstream>
+#include <cstdio>
 #include <chrono>
 using namespace std;
 using namespace Eigen;
@@ -70,7 +71,6 @@ double VFE::train(const VectorXd& _hyp)
     optimizer.set_min_objective(f, this);
     optimizer.set_lower_bounds(hyp_lb);
     optimizer.set_upper_bounds(hyp_ub);
-    // optimizer.set_xtol_abs(1e-9);
 
     nlopt::result r;
     try
@@ -89,6 +89,8 @@ double VFE::train(const VectorXd& _hyp)
 #ifdef MYDEBUG
         cerr << "Nlopt exception for GP training caught: " << e.what() << ", algorithm: " << optimizer.get_algorithm_name() << endl;
 #endif
+        hyp  = select_init_hyp(_num_hyp * 10, vec2hyp(hyp0));
+        hyp0 = hyp2vec(hyp);
     }
     cout << explain_nlopt(r) << endl;
     _hyps = vec2hyp(hyp0);
@@ -96,7 +98,7 @@ double VFE::train(const VectorXd& _hyp)
     _setK();
     _trained = true;
     return this->GP::_calcNegLogProb(_hyps);
-}    
+}
 void VFE::_predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept
 {
 }
@@ -111,6 +113,90 @@ void VFE::_setK()
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
+    return _calcNegLogProb(hyp, g, calc_grad, 1e-6 * _noise_lb);
+}
+double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad, double jitter_u) const
+{
+    const double sn2     = _hyp_sn2(hyp);
+    const double mean    = _hyp_mean(hyp);
+    const VectorXd y     = _train_out.array() - mean;
+    const MatrixXd Kuu   = _cov->k(hyp, _inducing, _inducing) + jitter_u * MatrixXd::Identity(_num_inducing, _num_inducing);
+    const MatrixXd Kxu   = _cov->k(hyp, _train_in, _inducing);
+    const MatrixXd Kux   = Kxu.transpose();
+    const MatrixXd Kuxxu = Kux * Kxu;
+    const MatrixXd A     = sn2 * Kuu + Kuxxu;
+
+    MatrixSolver* u_solver = _specify_matrix_solver(_md);
+    MatrixSolver* A_solver = _specify_matrix_solver(_md);
+    u_solver->decomp(Kuu);
+    A_solver->decomp(A);
+
+    const MatrixXd Kuu_inv = u_solver->inverse();
+    const MatrixXd A_inv   = A_solver->inverse();
+    const VectorXd alpha   = (y - Kxu * A_solver->solve(Kux * y)) / sn2;
+
+    const double f0                 = 0.5 * _num_train * log(2 * M_PI);
+    const double f_model_complexity = 0.5 * (A_solver->log_det() - u_solver->log_det() + (_num_train - _num_inducing) * log(sn2));
+    const double f_data_fit         = 0.5 * y.dot(alpha);
+    const double f_trace_term       = 0.5 * (_cov->diag_k(hyp, _train_in).sum() - (Kuu_inv * Kuxxu).trace()) / sn2;
+    double nlz                      = f0 + f_model_complexity + f_data_fit + f_trace_term;
+    if(not (u_solver->check_SPD() and A_solver->check_SPD() and isfinite(nlz)))
+    {
+        return _calcNegLogProb(hyp, g, calc_grad, 2 * jitter_u);
+    }
+
+    if(calc_grad)
+    {
+        g = VectorXd::Zero(_num_hyp);
+        const MatrixXd AinvKux = A_inv * Kux;
+        const VectorXd F       = Kux * y;
+        const VectorXd AinvF   = AinvKux * y;
+
+        const MatrixXd AinvKuxyytKxuAinv    = AinvF * AinvF.transpose();
+        const MatrixXd KxuAinvKuxyytKxuAinv = Kxu   * AinvKuxyytKxuAinv;
+        const MatrixXd AinvFyt              = AinvF * y.transpose();
+
+        const MatrixXd Kuu_inv_Kux             = Kuu_inv * Kux;
+        const MatrixXd Kuu_inv_Kux_Kxu_Kuu_inv = Kuu_inv_Kux * Kuu_inv_Kux.transpose();
+        const MatrixXd dKnn                    = _cov->diag_dk_dhyp(hyp, _train_in).transpose();
+
+        // if A :: N*m, B:: m*m and B = B.transpose(), C :: m * N then (A * B * C).trace() == (B * (C * A)).trace()
+        for(size_t i = 0; i < _cov->num_hyp(); ++i)
+        {
+            MatrixXd dKuu = _cov->dk_dhyp(hyp, i, _inducing, _inducing, Kuu);
+            MatrixXd dKxu = _cov->dk_dhyp(hyp, i, _train_in, _inducing, Kxu);
+            MatrixXd dKux = dKxu.transpose();
+
+
+            // derivative of data fit term
+            double g_datafit_1 = -1 * (sn2 * dKuu.cwiseProduct(AinvKuxyytKxuAinv).sum() + 2 * dKux.cwiseProduct(KxuAinvKuxyytKxuAinv.transpose()).sum());
+            double g_datafit_2 = 2 * dKux.cwiseProduct(AinvFyt).sum();
+            double g_datafit   = -0.5 * (g_datafit_1 + g_datafit_2) / sn2;
+
+
+            // derivative of the model_complexity term
+            double d_logA             = sn2 * A_inv.cwiseProduct(dKuu).sum() + 2 * AinvKux.cwiseProduct(dKux).sum();
+            double d_logKuu           = Kuu_inv.cwiseProduct(dKuu).sum();
+            double g_model_complexity = 0.5 * (d_logA - d_logKuu);
+
+            // derivatives of the trace term
+            double d_diag_Kxx = dKnn.col(i).sum();
+            double d_diag_Q     = 2 * dKxu.cwiseProduct(Kuu_inv_Kux.transpose()).sum() - dKuu.cwiseProduct(Kuu_inv_Kux_Kxu_Kuu_inv).sum();
+            double g_trace_term = 0.5 * (d_diag_Kxx - d_diag_Q) / sn2;
+
+            g(i) = g_datafit + g_model_complexity + g_trace_term;
+        }
+        // XXX: it seems that g(_num_hyp-2) == -2 * sn2 * alpha.dot(alpha)
+        g(_num_hyp-2) = -1 * sn2 * alpha.dot(alpha) + (_num_train - Kxu.cwiseProduct(AinvKux.transpose()).sum()) - 2 * f_trace_term;
+        g(_num_hyp-1) = -1 * alpha.sum(); // mean
+    }
+#ifdef MYDEBUG
+    cout << "nlz = " << nlz << ", model_complexity = " << f_model_complexity << ", data_fit =" << f_data_fit
+         << ", trace_term = " << f_trace_term << ", calc_grad = " << calc_grad << endl;
+#endif
+    delete u_solver;
+    delete A_solver;
+    return nlz;
 }
 MatrixXd VFE::_sym(const MatrixXd& m) const
 {
@@ -118,4 +204,30 @@ MatrixXd VFE::_sym(const MatrixXd& m) const
 }
 void VFE::test_obj(const VectorXd& hyp)
 {
+    VectorXd grad = hyp;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double nlz = _calcNegLogProb(hyp, grad, true);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    size_t span_1 = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
+    VectorXd grad_diff = hyp;
+    auto t3 = std::chrono::high_resolution_clock::now();
+    VectorXd dummy;
+    const double epsi = 1e-6;
+    for(size_t i = 0; i < _num_hyp; ++i)
+    {
+        VectorXd hyp1 = hyp;
+        VectorXd hyp2 = hyp;
+        hyp1[i]       += epsi;
+        hyp2[i]       -= epsi;
+        grad_diff[i]  = (this->GP::_calcNegLogProb(hyp1) - this->GP::_calcNegLogProb(hyp2)) / (2 * epsi);
+    }
+    auto t4 = std::chrono::high_resolution_clock::now();
+    size_t span_2 = std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count();
+    MatrixXd rec(_num_hyp, 3);
+    rec << hyp, grad, grad_diff;
+    cout << "---------------------------------------" << endl;
+    cout << rec << endl;
+    cout << "nlz: " << nlz << endl;
+    cout << "Time grad: "      << span_1 << " ms" << endl;
+    cout << "Time grad_diff: " << span_2 << " ms" << endl;
 }

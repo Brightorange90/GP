@@ -2,6 +2,7 @@
 #include "GP.h"
 class VFE : public GP
 {
+    double _calcNegLogProb(const Eigen::VectorXd& hyp, Eigen::VectorXd& g, bool calc_grad, double jitter) const;
 protected:
     Eigen::MatrixXd _sym(const Eigen::MatrixXd&) const;
     Eigen::MatrixXd _inducing;

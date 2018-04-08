@@ -41,6 +41,7 @@ int main(int arg_num, char** args)
     cout << "Training time: " << training_time << " seconds" << endl;
     cout << "Negative log likelihood: " << nlz << endl;
     cout << "Optimized hyperparameters:\n" << gp.get_hyp() << endl;
+    gp.test_obj(gp.get_hyp());
 
     auto t3                = chrono::high_resolution_clock::now();
     VectorXd predy         = gp.batch_predict_y(test_x);
