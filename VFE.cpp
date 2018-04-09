@@ -127,7 +127,7 @@ void VFE::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2
 void VFE::_setK()
 {
     const double sn2   = _hyp_sn2(_hyps);
-    double jitter      = 1e-6 * _noise_lb;
+    double jitter      = 1e-6 * sn2;
     const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
     const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
     const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);
@@ -150,12 +150,13 @@ void VFE::_setK()
         _u_solver->decomp(Kuu);
         _A_solver->decomp(A);
         jitter *= 2;
+        SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     }
     _alpha = _A_solver->solve(Kux * r) / sn2;
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
-    return _calcNegLogProb(hyp, g, calc_grad, 1e-6 * _noise_lb);
+    return _calcNegLogProb(hyp, g, calc_grad, 1e-6 * _hyp_sn2(hyp));
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad, double jitter_u) const
 {
@@ -184,10 +185,12 @@ double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad, do
     double nlz                      = f0 + f_model_complexity + f_data_fit + f_trace_term;
     if(not (u_solver->check_SPD() and A_solver->check_SPD() and isfinite(nlz)))
     {
-        return _calcNegLogProb(hyp, g, calc_grad, 2 * jitter_u);
+        nlz = INF;
+        if(calc_grad)
+            g = VectorXd::Zero(_num_hyp, 1);
     }
 
-    if(calc_grad)
+    if(calc_grad and isfinite(nlz))
     {
         g = VectorXd::Zero(_num_hyp);
         const MatrixXd AinvKux = A_inv * Kux;

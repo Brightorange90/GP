@@ -189,15 +189,17 @@ void FITC::_setK()
         Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
         inv_Gamma   = Gamma.cwiseInverse();
         A           = sn2 * Kuu + Kux * inv_Gamma.asDiagonal() * Kxu;
-        _A_solver->decomp(A);
+        _A_solver->decomp(A + jitter * Eye);
+        SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     }
     _alpha = _A_solver->solve(Kux * inv_Gamma.cwiseProduct(r));
 }
 double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
     const double sn2       = _hyp_sn2(hyp);
+    const double   jitter  = 1e-6 * sn2;
     const VectorXd sf2     = _cov->diag_k(hyp, _train_in);
-    const MatrixXd Kuu     = _cov->k(hyp, _inducing, _inducing);
+    const MatrixXd Kuu     = _cov->k(hyp, _inducing, _inducing) + jitter * MatrixXd::Identity(_num_inducing, _num_inducing);
     const MatrixXd Kxu     = _cov->k(hyp, _train_in, _inducing);
     const MatrixXd Kux     = Kxu.transpose();
     const VectorXd train_y = _train_out.array() - _hyp_mean(hyp);
@@ -223,11 +225,13 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
     if(not (u_solver->check_SPD() and A_solver->check_SPD() and isfinite(data_fit) and isfinite(model_complexity)))
     {
         nlz = INF;
+        if(calc_grad)
+            g = VectorXd::Zero(_num_hyp);
     }
 #ifdef MYDEBUG
     cout << "nlz: " << nlz << ", data_fit: " << data_fit << ", model_complexity: " << model_complexity << ", calc_grad: " << calc_grad << endl;
 #endif
-    if(calc_grad)
+    if(calc_grad and isfinite(nlz))
     {
         MatrixXd Kuu_inv = u_solver->inverse();
         MatrixXd A_inv   = A_solver->inverse();
