@@ -37,7 +37,7 @@ int main(int arg_num, char** args)
     gp.set_inducing(train_x.rightCols(num_inducing));
     VectorXd init_hyp           = gp.get_default_hyps();
     init_hyp(init_hyp.size()-2) = log(0.5*stddev<VectorXd>(train_y));
-    init_hyp                    = gp.select_init_hyp(200, init_hyp);
+    init_hyp                    = gp.select_init_hyp(500, init_hyp);
     auto t1                     = chrono::high_resolution_clock::now();
     double nlz                  = gp.train(init_hyp);
     auto t2                     = chrono::high_resolution_clock::now();
@@ -48,18 +48,18 @@ int main(int arg_num, char** args)
 
     gp.test_obj(gp.get_hyp());
 
-    // auto t3                = chrono::high_resolution_clock::now();
-    // VectorXd predy         = gp.batch_predict_y(test_x);
-    // VectorXd preds2        = gp.batch_predict_s2(test_x);
-    // auto t4                = chrono::high_resolution_clock::now();
-    // double prediction_time = 1e-6 * (double)(duration_cast<chrono::microseconds>(t4 - t3).count());
-    // cout << "Prediction time: " << prediction_time << " seconds" << endl;
+    auto t3                = chrono::high_resolution_clock::now();
+    VectorXd predy         = gp.batch_predict_y(test_x);
+    VectorXd preds2        = gp.batch_predict_s2(test_x);
+    auto t4                = chrono::high_resolution_clock::now();
+    double prediction_time = 1e-6 * (double)(duration_cast<chrono::microseconds>(t4 - t3).count());
+    cout << "Prediction time: " << prediction_time << " seconds" << endl;
 
-    // MatrixXd rec(test_x.cols(), 2);
-    // rec << predy, preds2.cwiseSqrt();
+    MatrixXd rec(test_x.cols(), 2);
+    rec << predy, preds2.cwiseSqrt();
 
-    // ofstream f("pred");
-    // f << rec << endl;
-    // f.close();
+    ofstream f("pred");
+    f << rec << endl;
+    f.close();
     return EXIT_SUCCESS;
 }

@@ -103,7 +103,6 @@ double FITC::train(const VectorXd& _hyp)
 }    
 void FITC::_predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept
 {
-    assert(not need_g);
     const VectorXd sf2    = _cov->diag_k(_hyps, x);
     const double sn2      = _hyp_sn2(_hyps);
     const double mean     = _hyp_mean(_hyps);
@@ -126,7 +125,6 @@ void FITC::_predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, E
 }
 void FITC::_predict_y(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::MatrixXd& gy) const noexcept
 {
-    assert(not need_g);
     const double mean = _hyp_mean(_hyps);
     MatrixXd K_star   = _cov->k(_hyps, x, _inducing);
     y                 = (K_star * _alpha).array() + mean;
@@ -142,8 +140,6 @@ void FITC::_predict_y(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y,
 }
 void FITC::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept
 {
-    assert(not need_g);
-    assert(not need_g);
     const VectorXd sf2    = _cov->diag_k(_hyps, x);
     const double sn2      = _hyp_sn2(_hyps);
     const MatrixXd K_star = _cov->k(_hyps, x, _inducing);
@@ -164,7 +160,7 @@ void FITC::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s
 void FITC::_setK()
 {
     const double sn2   = _hyp_sn2(_hyps);
-    double jitter      = 1e-6 * sn2;
+    double jitter      = 1e-6 * _noise_lb;
     const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
     const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
     const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);

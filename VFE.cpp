@@ -12,6 +12,8 @@ VFE::VFE(const MatrixXd& train_in, const MatrixXd& train_out, GP::CovFunc cf, GP
     // XXX: can not be noise-free
     _inducing     = train_in;
     _num_inducing = train_in.cols();
+    _u_solver     = _specify_matrix_solver(_md);
+    _A_solver     = _specify_matrix_solver(_md);
 }
 VFE::~VFE()
 {
@@ -101,15 +103,56 @@ double VFE::train(const VectorXd& _hyp)
 }
 void VFE::_predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept
 {
+    assert(not need_g);
 }
 void VFE::_predict_y(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::MatrixXd& gy) const noexcept
 {
+    const double mean     = _hyp_mean(_hyps);
+    const MatrixXd K_star = _cov->k(_hyps, x, _inducing);
+    y = (K_star * _alpha).array() + mean;
+    if(need_g)
+    {
+        gy = MatrixXd(_dim, x.cols());
+        for(long i = 0; i < x.cols(); ++i)
+            gy.col(i) = _cov->dk_dx1(_hyps, x.col(i), _inducing) * _alpha;
+    }
 }
 void VFE::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept
 {
+    const VectorXd sf2    = _cov->diag_k(_hyps, x);
+    const MatrixXd K_star = _cov->k(_hyps, x, _inducing);
+    const MatrixXd KinvK  = _u_solver->solve(K_star.transpose()) - _A_solver->solve(K_star.transpose());
+    s2                    = (sf2 - (K_star * KinvK).diagonal()).cwiseMax(0);
 }
 void VFE::_setK()
 {
+    const double sn2   = _hyp_sn2(_hyps);
+    double jitter      = 1e-6 * _noise_lb;
+    const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
+    const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
+    const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);
+    const MatrixXd Kux = Kxu.transpose();
+    const MatrixXd Eye = MatrixXd::Identity(_num_inducing, _num_inducing);
+
+    MatrixXd Kuu = _cov->k(_hyps, _inducing, _inducing);
+    MatrixXd A   = Kuu + Kux * Kxu / sn2;
+    _u_solver->decomp(Kuu);
+    _A_solver->decomp(A);
+
+    bool SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
+    while(not SPD)
+    {
+        Kuu     = Kuu + jitter * Eye;
+        A       = Kuu + jitter * Eye;
+#ifdef MYDEBUG
+        cerr << "Add jitter to " << jitter << endl;
+#endif
+        _u_solver->decomp(Kuu);
+        _A_solver->decomp(A);
+        jitter *= 2;
+    }
+    const VectorXd mu = Kuu * _A_solver->solve(Kux * r) / sn2;
+    _alpha            = _u_solver->solve(mu);
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {

@@ -16,6 +16,10 @@ protected:
     void   _predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept;
     void   _setK();  // precompute cholK, invKy after training
 
+    Eigen::VectorXd _alpha;
+    MatrixSolver*   _u_solver;
+    MatrixSolver*   _A_solver;
+
 public:
     VFE(const Eigen::MatrixXd& train_in, const Eigen::MatrixXd& train_out, CovFunc cf = COV_SE_ARD, GP::MatrixDecomp md = QR);
     ~VFE();
