@@ -67,7 +67,7 @@ double FITC::train(const VectorXd& _hyp)
         cout << "Relative error of gradient: " << rel_err << endl;
 #endif
     nlopt::algorithm algo = nlopt::LD_SLSQP;
-    size_t max_eval       = 150;
+    size_t max_eval       = 130;
 
     nlopt::opt optimizer(algo, hyp0.size());
     optimizer.set_maxeval(max_eval);
@@ -237,13 +237,14 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
         MatrixXd A_inv   = A_solver->inverse();
         g = VectorXd::Zero(_num_hyp, 1);
 
-        MatrixXd dKuu              = MatrixXd::Zero(_num_inducing, _num_inducing);
-        MatrixXd dKux              = MatrixXd::Zero(_num_inducing, _num_train);
-        MatrixXd dKxu              = MatrixXd::Zero(_num_train, _num_inducing);
-        VectorXd dGamma            = VectorXd::Zero(_num_train, 1);
-        MatrixXd dA                = MatrixXd::Zero(_num_inducing, _num_inducing);
-        VectorXd gamma_inv_Gamma_y = VectorXd::Zero(_num_train, 1);
-        VectorXd dF                = VectorXd::Zero(_num_inducing, 1);
+        MatrixXd dKuu                       = MatrixXd::Zero(_num_inducing, _num_inducing);
+        MatrixXd dKux                       = MatrixXd::Zero(_num_inducing, _num_train);
+        MatrixXd dKxu                       = MatrixXd::Zero(_num_train, _num_inducing);
+        VectorXd dGamma                     = VectorXd::Zero(_num_train, 1);
+        // MatrixXd dA                         = MatrixXd::Zero(_num_inducing, _num_inducing);
+        VectorXd dF                         = VectorXd::Zero(_num_inducing, 1);
+        VectorXd invGamma_dGamma_invGamma   = VectorXd::Zero(_num_train, 1);
+        VectorXd invGamma_dGamma_invGamma_y = VectorXd::Zero(_num_train, 1);
 
         // const MatrixXd Kt             = Kuu_inv_Kux.transpose();
         const MatrixXd Kux_invGamma   = Kux * inv_Gamma.asDiagonal();
@@ -254,6 +255,14 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
         const VectorXd inv_Gamma_y = inv_Gamma.cwiseProduct(train_y);
         const VectorXd F           = Kux * inv_Gamma_y;
 
+        const VectorXd AinvF                            = A_solver->solve(F);
+        const MatrixXd inv_Gamma_Kxu_Ainv               = inv_Gamma_Kxu * A_inv;
+        const VectorXd inv_Gamma_Kxu_Ainv_Kux_inv_Gamma = (inv_Gamma_Kxu_Ainv * Kux_invGamma).diagonal();
+        const VectorXd inv_Gamma_Kxu_AinvF              = inv_Gamma_Kxu_Ainv * F;
+        const VectorXd invGamma_invGamma                = inv_Gamma.cwiseProduct(inv_Gamma);
+        const VectorXd invGamma_invGammay               = inv_Gamma.cwiseProduct(inv_Gamma_y);
+        const VectorXd KxuAinvF                         = Kxu * AinvF;
+
         for(size_t i = 0; i < _cov->num_hyp(); ++i)
         {
             dKuu     = _cov->dk_dhyp(hyp, i, _inducing, _inducing, Kuu);
@@ -262,22 +271,41 @@ double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) c
 
             // XXX: bottleneck, O(Nm^2) complexity
             dGamma = (dKn_diag.col(i)  - Kxu_Kuu_inv.cwiseProduct(2 * dKxu - Kxu_Kuu_inv * dKuu).rowwise().sum()) / sn2;
-            dA     = sn2 * dKuu + 2 * _sym(Kux_invGamma * dKxu) - Kux_invGamma  * dGamma.asDiagonal() * inv_Gamma_Kxu;
 
-            // O(2m^2+m) = O(m^2)
-            double dl1 = (A_inv.cwiseProduct(dA).sum() - Kuu_inv.cwiseProduct(dKuu).sum() + inv_Gamma.cwiseProduct(dGamma).sum());
+            // dA     = sn2 * dKuu + 2 * _sym(Kux_invGamma * dKxu) - Kux_invGamma  * dGamma.asDiagonal() * inv_Gamma_Kxu;
+
+            // // O(2m^2+m) = O(m^2)
+            // double dl1 = (A_inv.cwiseProduct(dA).sum() - Kuu_inv.cwiseProduct(dKuu).sum() + inv_Gamma.cwiseProduct(dGamma).sum());
 
 
-            gamma_inv_Gamma_y = inv_Gamma.cwiseProduct(dGamma.cwiseProduct(inv_Gamma_y));
-            dF                = dKux * inv_Gamma_y - Kux * gamma_inv_Gamma_y;
-            double dl2_1 = -1  * train_y.dot(gamma_inv_Gamma_y);
-            double dl2_2 = -1  * F.dot(A_inv * (dA * (A_inv * F))) + 2 * F.dot(A_inv * dF);
+            // invGamma_dGamma_invGamma_y = inv_Gamma.cwiseProduct(dGamma.cwiseProduct(inv_Gamma_y));
+            // dF                = dKux * inv_Gamma_y - Kux * invGamma_dGamma_invGamma_y;
+            // double dl2_1 = -1  * train_y.dot(invGamma_dGamma_invGamma_y);
+            // double dl2_2 = -1  * F.dot(A_inv * (dA * (A_inv * F))) + 2 * F.dot(A_inv * dF);
 
-            g(i)         = 0.5 * (dl1 + (dl2_1 - dl2_2) / sn2);
+            // g(i)         = 0.5 * (dl1 + (dl2_1 - dl2_2) / sn2);
+            
+            const double g_logKuu           = dKuu.cwiseProduct(Kuu_inv).sum();
+            const double g_logA             = sn2 * dKuu.cwiseProduct(A_inv).sum()
+                                            + 2 * dKux.cwiseProduct(inv_Gamma_Kxu_Ainv.transpose()).sum() 
+                                            - dGamma.dot(inv_Gamma_Kxu_Ainv_Kux_inv_Gamma);
+            const double g_logGamma         = dGamma.dot(inv_Gamma);
+            const double g_model_complexity = g_logA - g_logKuu + g_logGamma;
+
+
+            invGamma_dGamma_invGamma   = invGamma_invGamma.cwiseProduct(dGamma);
+            invGamma_dGamma_invGamma_y = invGamma_invGammay.cwiseProduct(dGamma);
+            dF                         = dKux * inv_Gamma_y - Kux * invGamma_dGamma_invGamma_y;
+            VectorXd v_tmp             = sn2 * dKuu * AinvF + 2 * dKux * inv_Gamma_Kxu_AinvF - Kux * invGamma_dGamma_invGamma.cwiseProduct(KxuAinvF);
+            const double g_datafit_1   = -1 * train_y.dot(invGamma_dGamma_invGamma_y);
+            const double g_datafit_2_1 = 2  * F.dot(A_inv * dF);
+            const double g_datafit_2_2 = AinvF.dot(v_tmp);
+            const double g_datafit     = (g_datafit_1 - (g_datafit_2_1 - g_datafit_2_2)) / sn2;
+            g(i)                       = 0.5 * (g_model_complexity + g_datafit);
         }
 
         // noise and mean
-        double dl_noise_1 = 0.5  * (inv_Gamma.sum() - (inv_Gamma_Kxu * A_inv * Kux_invGamma).trace()) / sn2;
+        double dl_noise_1 = 0.5  * (inv_Gamma.sum() - inv_Gamma_Kxu_Ainv_Kux_inv_Gamma.sum()) / sn2;
         double dl_noise_2 = -0.5 * l2_tmp4.squaredNorm() / pow(sn2, 2);
         g(_num_hyp-2)     = (dl_noise_1 + dl_noise_2) * (2 * sn2);
         g(_num_hyp-1)     = -1 * (l2_tmp4 / sn2).sum();
