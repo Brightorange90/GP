@@ -151,8 +151,7 @@ void VFE::_setK()
         _A_solver->decomp(A);
         jitter *= 2;
     }
-    const VectorXd mu = Kuu * _A_solver->solve(Kux * r) / sn2;
-    _alpha            = _u_solver->solve(mu);
+    _alpha = _A_solver->solve(Kux * r) / sn2;
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
