@@ -35,11 +35,13 @@ int main(int arg_num, char** args)
 
     VFE gp(train_x.leftCols(num_train), train_y.topRows(num_train), GP::CovFunc::COV_SE_ARD, GP::MatrixDecomp::QR);
     gp.set_inducing(train_x.rightCols(num_inducing));
-    VectorXd init_hyp = gp.select_init_hyp(1000, gp.get_default_hyps());
-    auto t1              = chrono::high_resolution_clock::now();
-    double nlz           = gp.train(init_hyp);
-    auto t2              = chrono::high_resolution_clock::now();
-    size_t training_time = duration_cast<chrono::seconds>(t2-t1).count();
+    VectorXd init_hyp           = gp.get_default_hyps();
+    init_hyp(init_hyp.size()-2) = log(0.5*stddev<VectorXd>(train_y));
+    init_hyp                    = gp.select_init_hyp(200, init_hyp);
+    auto t1                     = chrono::high_resolution_clock::now();
+    double nlz                  = gp.train(init_hyp);
+    auto t2                     = chrono::high_resolution_clock::now();
+    size_t training_time        = duration_cast<chrono::seconds>(t2-t1).count();
     cout << "Training time: " << training_time << " seconds" << endl;
     cout << "Negative log likelihood: " << nlz << endl;
     cout << "Optimized hyperparameters:\n" << gp.get_hyp() << endl;
