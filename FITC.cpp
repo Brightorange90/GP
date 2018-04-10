@@ -24,6 +24,11 @@ void FITC::set_inducing(const MatrixXd& u)
     _inducing     = u;
     _num_inducing = u.cols();
 }
+void FITC::_init()
+{
+    this->GP::_init();
+    _jitter_u = pow(1e-1*_noise_lb, 2);
+}
 double FITC::train(const VectorXd& _hyp)
 {
     VectorXd hyp = _hyp;
@@ -160,7 +165,6 @@ void FITC::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s
 void FITC::_setK()
 {
     const double sn2   = _hyp_sn2(_hyps);
-    double jitter      = 1e-6 * _noise_lb;
     const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
     const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
     const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);
@@ -168,7 +172,7 @@ void FITC::_setK()
     const MatrixXd Kuu = _cov->k(_hyps, _inducing, _inducing);
     const MatrixXd Eye = MatrixXd::Identity(_num_inducing, _num_inducing);
 
-    _u_solver->decomp(Kuu + jitter * Eye);
+    _u_solver->decomp(Kuu + _jitter_u * Eye);
     MatrixXd Kuu_inv_Kux = _u_solver->solve(Kux);
     MatrixXd Kxu_Kuu_inv = Kuu_inv_Kux.transpose();
     VectorXd Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
@@ -179,17 +183,17 @@ void FITC::_setK()
     bool SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     while(not SPD)
     {
-        jitter *= 2;
+        _jitter_u *= 2;
 #ifdef MYDEBUG
-        cerr << "Add jitter to " << jitter << endl;
+        cerr << "Add jitter to " << _jitter_u << endl;
 #endif
-        _u_solver->decomp(Kuu + jitter * Eye);
+        _u_solver->decomp(Kuu + _jitter_u * Eye);
         Kuu_inv_Kux = _u_solver->solve(Kux);
         Kxu_Kuu_inv = Kuu_inv_Kux.transpose();
         Gamma       = (sn2 + sf2.array() - (Kxu * Kuu_inv_Kux).diagonal().array()) / sn2; // Eigen seems to have already optimized (A * B).diagonal()
         inv_Gamma   = Gamma.cwiseInverse();
         A           = sn2 * Kuu + Kux * inv_Gamma.asDiagonal() * Kxu;
-        _A_solver->decomp(A + jitter * Eye);
+        _A_solver->decomp(A + _jitter_u * Eye);
         SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     }
     _alpha = _A_solver->solve(Kux * inv_Gamma.cwiseProduct(r));
@@ -197,9 +201,8 @@ void FITC::_setK()
 double FITC::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
     const double sn2       = _hyp_sn2(hyp);
-    const double   jitter  = 1e-6 * sn2;
     const VectorXd sf2     = _cov->diag_k(hyp, _train_in);
-    const MatrixXd Kuu     = _cov->k(hyp, _inducing, _inducing) + jitter * MatrixXd::Identity(_num_inducing, _num_inducing);
+    const MatrixXd Kuu     = _cov->k(hyp, _inducing, _inducing) + _jitter_u * MatrixXd::Identity(_num_inducing, _num_inducing);
     const MatrixXd Kxu     = _cov->k(hyp, _train_in, _inducing);
     const MatrixXd Kux     = Kxu.transpose();
     const VectorXd train_y = _train_out.array() - _hyp_mean(hyp);
@@ -328,7 +331,7 @@ void FITC::test_obj(const VectorXd& hyp)
     VectorXd grad_diff = hyp;
     auto t3 = std::chrono::high_resolution_clock::now();
     VectorXd dummy;
-    const double epsi = 1e-6;
+    const double epsi = 1e-3;
     for(size_t i = 0; i < _num_hyp; ++i)
     {
         VectorXd hyp1 = hyp;
