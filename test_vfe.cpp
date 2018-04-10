@@ -36,7 +36,7 @@ int main(int arg_num, char** args)
     VFE gp(train_x.leftCols(num_train), train_y.topRows(num_train), GP::CovFunc::COV_SE_ARD, GP::MatrixDecomp::QR);
     gp.set_inducing(train_x.rightCols(num_inducing));
     VectorXd init_hyp           = gp.get_default_hyps();
-    init_hyp(init_hyp.size()-2) = log(0.5*stddev<VectorXd>(train_y));
+    init_hyp(init_hyp.size()-2) = log(stddev<VectorXd>(train_y));
     auto t1                     = chrono::high_resolution_clock::now();
     double nlz                  = gp.train(init_hyp);
     auto t2                     = chrono::high_resolution_clock::now();

@@ -14,9 +14,11 @@ protected:
     void   _predict(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::VectorXd& s2, Eigen::MatrixXd& gy, Eigen::MatrixXd& gs2) const noexcept;
     void   _predict_y(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& y, Eigen::MatrixXd& gy) const noexcept;
     void   _predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2, Eigen::MatrixXd& gs2) const noexcept;
+
     void   _setK();  // precompute cholK, invKy after training
 
     Eigen::VectorXd _alpha;
+    double _jitter_u;
     MatrixSolver*   _u_solver;
     MatrixSolver*   _A_solver;
 

@@ -142,8 +142,8 @@ void VFE::_setK()
     bool SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     while(not SPD)
     {
-        Kuu     = Kuu + jitter * Eye;
-        A       = Kuu + jitter * Eye;
+        Kuu = Kuu + jitter * Eye;
+        A   = Kuu + Kux * Kxu / sn2;
 #ifdef MYDEBUG
         cerr << "Add jitter to " << jitter << endl;
 #endif
