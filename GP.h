@@ -26,6 +26,7 @@ public:
     };
 
 protected:
+    bool _debug_flag = false;
     Eigen::MatrixXd _train_in;
     Eigen::VectorXd _train_out;
     CovFunc _cf;
