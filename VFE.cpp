@@ -23,6 +23,11 @@ void VFE::set_inducing(const MatrixXd& u)
     _inducing     = u;
     _num_inducing = u.cols();
 }
+void VFE::_init()
+{
+    this->GP::_init();
+    _jitter_u = pow(1e-1*_noise_lb, 2);
+}
 double VFE::train(const VectorXd& _hyp)
 {
     VectorXd hyp = _hyp;
@@ -127,7 +132,6 @@ void VFE::_predict_s2(const Eigen::MatrixXd& x, bool need_g, Eigen::VectorXd& s2
 void VFE::_setK()
 {
     const double sn2   = _hyp_sn2(_hyps);
-    double jitter      = 1e-6 * sn2;
     const VectorXd sf2 = _cov->diag_k(_hyps, _train_in);
     const VectorXd r   = _train_out.array() - _hyp_mean(_hyps);
     const MatrixXd Kxu = _cov->k(_hyps, _train_in, _inducing);
@@ -142,21 +146,21 @@ void VFE::_setK()
     bool SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     while(not SPD)
     {
-        Kuu = Kuu + jitter * Eye;
+        Kuu = Kuu + _jitter_u * Eye;
         A   = Kuu + Kux * Kxu / sn2;
 #ifdef MYDEBUG
-        cerr << "Add jitter to " << jitter << endl;
+        cerr << "Add jitter to " << _jitter_u << endl;
 #endif
         _u_solver->decomp(Kuu);
         _A_solver->decomp(A);
-        jitter *= 2;
+        _jitter_u *= 2;
         SPD = _A_solver->check_SPD() and _u_solver->check_SPD();
     }
     _alpha = _A_solver->solve(Kux * r) / sn2;
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad) const
 {
-    return _calcNegLogProb(hyp, g, calc_grad, 1e-6 * _hyp_sn2(hyp));
+    return _calcNegLogProb(hyp, g, calc_grad, _jitter_u);
 }
 double VFE::_calcNegLogProb(const VectorXd& hyp, VectorXd& g, bool calc_grad, double jitter_u) const
 {
