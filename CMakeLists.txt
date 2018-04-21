@@ -65,7 +65,7 @@ endif()
 
 message(STATUS "Install prefix: ${CMAKE_INSTALL_PREFIX}")
 # install GP into a seperate directory
-install(TARGETS ${LIB} 
+install(TARGETS ${LIB} gp fitc vfe
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib)
