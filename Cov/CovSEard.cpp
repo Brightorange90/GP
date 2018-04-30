@@ -65,9 +65,8 @@ std::pair<VectorXd, VectorXd> CovSEard::cov_hyp_range(const MatrixXd& xs, const 
         hyps_ub(i) = lscale_ub; 
     }
 
-    // variance
-    hyps_lb(_dim) = log(max(0.0, numeric_limits<double>::epsilon() * (ys.maxCoeff() - ys.minCoeff())));
-    hyps_ub(_dim) = log(10 * (ys.maxCoeff() - ys.minCoeff()));
+    hyps_lb(_dim) = log(max(numeric_limits<double>::epsilon(), numeric_limits<double>::epsilon() * (ys.maxCoeff() - ys.minCoeff())));
+    hyps_ub(_dim) = log(max(10 * numeric_limits<double>::epsilon(), 10 * (ys.maxCoeff() - ys.minCoeff())));
     return {hyps_lb, hyps_ub};
 }
 VectorXd CovSEard::default_hyp(const MatrixXd& xs, const VectorXd& ys) const

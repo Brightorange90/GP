@@ -522,11 +522,14 @@ void GP::_set_hyp_range()
 
     // noise
     _hyps_lb(_num_hyp-2) = log(_noise_lb);
-    _hyps_ub(_num_hyp-2) = _hyps_ub(_cov->num_hyp()-1);
+    _hyps_ub(_num_hyp-2) = max(log(10 * _noise_lb), _hyps_ub(_cov->num_hyp()-1));
     
     //mean
     _hyps_lb(_num_hyp - 1) = _train_out.minCoeff();
     _hyps_ub(_num_hyp - 1) = _train_out.maxCoeff();
+
+    _hyps_lb = _hyps_lb.array() - numeric_limits<double>::epsilon();
+    _hyps_ub = _hyps_ub.array() + numeric_limits<double>::epsilon();
 
 }
 Eigen::VectorXd GP::vec2hyp(const std::vector<double>& vx) const
