@@ -72,8 +72,8 @@ std::pair<VectorXd, VectorXd> CovSEiso::cov_hyp_range(const MatrixXd& xs, const 
     }
 
     // variance
-    hyps_lb(_dim) = log(max(0.0, numeric_limits<double>::epsilon() * (ys.maxCoeff() - ys.minCoeff())));
-    hyps_ub(_dim) = log(10 * (ys.maxCoeff() - ys.minCoeff()));
+    hyps_lb(1) = log(max(0.0, numeric_limits<double>::epsilon() * (ys.maxCoeff() - ys.minCoeff())));
+    hyps_ub(1) = log(10 * (ys.maxCoeff() - ys.minCoeff()));
     return {hyps_lb, hyps_ub};
 }
 VectorXd CovSEiso::default_hyp(const MatrixXd&, const VectorXd& ys) const
