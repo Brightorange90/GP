@@ -342,6 +342,17 @@ void GP::_setK()
             cerr << "Add noise of spec" << i << " to " << sqrt(sn2) << endl;
 #endif
             is_SPD = _check_SPD(K);
+            if(isinf(sn2))
+            {
+                cerr << "Fail to build GP model" << endl;
+#ifdef MYDEBUG
+                cerr << "i:\n" << i << endl;
+                cerr << "Train x:\n" << _train_in << endl;
+                cerr << "Train y:\n" << _train_out << endl;
+                cerr << "hyps:\n" << _hyps << endl;
+#endif
+                exit(EXIT_FAILURE);
+            }
         }
         _K_solver.push_back(K.colPivHouseholderQr());
         _invKys.col(i) = _K_solver[i].solve(static_cast<VectorXd>(_train_out.col(i).array() - _hyps(_dim + 2, i)));
@@ -585,21 +596,22 @@ void GP::_set_hyp_range()
         _hyps_lb.row(i) = RowVectorXd::Constant(1, _num_spec, lscale_lb);
         _hyps_ub.row(i) = RowVectorXd::Constant(1, _num_spec, lscale_ub);
     }
-
-    // variance and mean
+    //variance and mean
+    const double epsi = numeric_limits<double>::epsilon();
     for(size_t i = 0; i < _num_spec; ++i)
     {
         long max_idx, min_idx;
         _train_out.col(i).maxCoeff(&max_idx);
         _train_out.col(i).minCoeff(&min_idx);
-        _hyps_lb(_dim, i)     = log(max(_noise_lb, numeric_limits<double>::epsilon() * (_train_out(max_idx, i) - _train_out(min_idx, i))));
-        _hyps_ub(_dim, i)     = log(10 * (_train_out(max_idx, i) - _train_out(min_idx, i)));
-        _hyps_lb(_dim + 2, i) = _train_out(min_idx, i);
-        _hyps_ub(_dim + 2, i) = _train_out(max_idx, i);
+        _hyps_lb(_dim, i)     = log(max(epsi, numeric_limits<double>::epsilon() * (_train_out(max_idx, i) - _train_out(min_idx, i))));
+        _hyps_ub(_dim, i)     = log(max(10*epsi, 10 * (_train_out(max_idx, i) - _train_out(min_idx, i))));
+        _hyps_lb(_dim + 2, i) = _train_out(min_idx, i) - epsi;
+        _hyps_ub(_dim + 2, i) = _train_out(max_idx, i) + epsi;
     }
 
-    // noise
+    // // noise
     _hyps_lb.row(_dim + 1) = RowVectorXd::Constant(1, _num_spec, log(_noise_lb));
+    _hyps_ub.row(_dim + 1) = _hyps_ub.row(_dim).cwiseMax(log(10 * _noise_lb));
 }
 Eigen::VectorXd GP::vec2hyp(const std::vector<double>& vx) const
 {
