@@ -342,7 +342,7 @@ void GP::_setK()
             cerr << "Add noise of spec" << i << " to " << sqrt(sn2) << endl;
 #endif
             is_SPD = _check_SPD(K);
-            if(isinf(sn2))
+            if(std::isinf(sn2))
             {
                 cerr << "Fail to build GP model" << endl;
 #ifdef MYDEBUG
