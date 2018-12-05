@@ -89,7 +89,7 @@ double FITC::train(const VectorXd& _hyp)
         r = optimizer.optimize(hyp0, nlz);
         auto t2 = chrono::high_resolution_clock::now();
         cout << "Training time: " << duration_cast<chrono::seconds>(t2-t1).count() << " seconds" << endl;
-#elif
+#else
         r = optimizer.optimize(hyp0, nlz);
 #endif
     }
