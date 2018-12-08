@@ -531,13 +531,13 @@ VectorXd GP::select_init_hyp(size_t max_eval, size_t spec_idx, const Eigen::Vect
 //     }
 //     return vec2hyp(initial_guess);
 }
-MatrixXd GP::select_init_hyp(size_t num_lscale, const MatrixXd& def_hyp)
+MatrixXd GP::select_init_hyp(size_t max_eval, const MatrixXd& def_hyp)
 {
     MatrixXd candidate_hyp = def_hyp;
 #pragma omp parallel for
     for(size_t i = 0; i < _num_spec; ++i)
     {
-        candidate_hyp.col(i) = select_init_hyp(num_lscale, i, def_hyp.col(i));
+        candidate_hyp.col(i) = select_init_hyp(max_eval, i, def_hyp.col(i));
     }
     return candidate_hyp;
 }

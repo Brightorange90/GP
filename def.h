@@ -1,3 +1,9 @@
+/** 
+ * @file def.h 
+ * @author Wenlong Lyu
+ *
+ * Some basic definitions used in GP
+ */
 #pragma once
 #include <cassert>
 #include <iostream>
@@ -5,12 +11,21 @@
 #include <random>
 #include <vector>
 #include <functional>
-// The random seed used in debug and release mode
+/** 
+ * The random seed used in debug and release mode
+ * In debug mode, the random seed can be passed through CMake options
+ */
 extern const size_t rand_seed;
+
+/**
+ * Random number generator using `rand_seed` as the seed
+ */
 extern std::mt19937_64 engine;
 
+/** Macro for infinity */
 #define INF std::numeric_limits<double>::infinity()
 
+/** Used to print TODO messages */
 #define TODO                                         \
     {                                                \
         std::cerr << "TODO assertion" << endl;       \
@@ -20,6 +35,7 @@ extern std::mt19937_64 engine;
         exit(EXIT_FAILURE);                          \
     }
 
+/** Assertion with more detailed messages */
 #ifdef MYDEBUG
 #define MYASSERT(x)                                           \
     if (!(x))                                                 \
